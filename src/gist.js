@@ -51,7 +51,7 @@ async function githubFetch(url, options = {}, fetchImpl = fetch) {
   return response;
 }
 
-async function loadGistFileContent(gistFile, token, fetchImpl) {
+async function loadGistFileContent(gistFile, token, fetchImpl = fetch) {
   if (gistFile?.truncated && gistFile?.raw_url) {
     const response = await fetchImpl(gistFile.raw_url, {
       headers: {
@@ -189,3 +189,4 @@ export async function downloadPackageFromGist({ gistId, remoteKey, fetchImpl, en
     }
   };
 }
+
