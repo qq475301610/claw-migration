@@ -10,7 +10,7 @@ This plugin is intended to be packaged like an OpenClaw plugin bundle:
 - Skills: `skills/claw-migration/SKILL.md`
 - Flake export: `openclawPlugin`
 
-The included [flake.nix](/D:/workspace/my/claw-migration/plugins/claw-migration/flake.nix) exposes a `claw-migration-cli` package and an `openclawPlugin` definition.
+The included [flake.nix](/D:/workspace/my/claw-migration/flake.nix) exposes a `claw-migration-cli` package and an `openclawPlugin` definition.
 
 ## `openclaw.json` configuration
 
@@ -182,7 +182,7 @@ If you want the safest single-agent handoff:
 
 ## Skills
 
-The plugin skill is at [skills/claw-migration/SKILL.md](/D:/workspace/my/claw-migration/plugins/claw-migration/skills/claw-migration/SKILL.md). It is written so an Agent will:
+The plugin skill is at [skills/claw-migration/SKILL.md](/D:/workspace/my/claw-migration/skills/claw-migration/SKILL.md). It is written so an Agent will:
 
 1. Read plugin config from `openclaw.json`
 2. Run `preview` before `push` or `pull`
@@ -192,9 +192,10 @@ The plugin skill is at [skills/claw-migration/SKILL.md](/D:/workspace/my/claw-mi
 ## Tests
 
 ```bash
-npm test --prefix plugins/claw-migration
+npm test
 ```
 
 ## Additional guide
 
-There is also a GitHub-focused operator guide at [docs/github-provider-guide.md](/D:/workspace/my/claw-migration/plugins/claw-migration/docs/github-provider-guide.md).
+There is also a GitHub-focused operator guide at [docs/github-provider-guide.md](/D:/workspace/my/claw-migration/docs/github-provider-guide.md).
+
