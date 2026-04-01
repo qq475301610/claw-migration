@@ -1,4 +1,6 @@
-﻿# Claw Migration
+# Claw Migration
+
+[English](./README.md) | [简体中文](./README.zh-CN.md)
 
 `claw-migration` is an OpenClaw-oriented plugin package that ships a migration CLI plus skills. It is built around remote-backed `push`/`pull` workflows configured from `openclaw.json`.
 
@@ -198,4 +200,3 @@ npm test
 ## Additional guide
 
 There is also a GitHub-focused operator guide at [docs/github-provider-guide.md](/D:/workspace/my/claw-migration/docs/github-provider-guide.md).
-
