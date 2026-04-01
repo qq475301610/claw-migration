@@ -1,4 +1,4 @@
-import fs from 'node:fs/promises';
+﻿import fs from 'node:fs/promises';
 import path from 'node:path';
 import { DEFAULT_GIST_FILE_NAME, GITHUB_TOKEN_ENV_VARS } from './constants.js';
 import { makeTempDir, pathExists, sha256Buffer } from './utils.js';
@@ -49,6 +49,23 @@ async function githubFetch(url, options = {}, fetchImpl = fetch) {
   }
 
   return response;
+}
+
+async function loadGistFileContent(gistFile, token, fetchImpl) {
+  if (gistFile?.truncated && gistFile?.raw_url) {
+    const response = await fetchImpl(gistFile.raw_url, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`GitHub raw gist download failed (${response.status}): ${body}`);
+    }
+    return response.text();
+  }
+
+  return gistFile?.content ?? null;
 }
 
 export async function findGistByRemoteKey({ remoteKey, fetchImpl, env = process.env, configuredToken } = {}) {
@@ -153,13 +170,14 @@ export async function downloadPackageFromGist({ gistId, remoteKey, fetchImpl, en
   }, fetchImpl);
   const gist = await response.json();
   const gistFile = gist?.files?.[DEFAULT_GIST_FILE_NAME];
-  if (!gistFile?.content) {
+  const base64Content = await loadGistFileContent(gistFile, token, fetchImpl);
+  if (!base64Content) {
     throw new Error(`Gist ${resolvedGistId} does not contain ${DEFAULT_GIST_FILE_NAME}.`);
   }
 
   const outputDir = await makeTempDir('openclaw-migration-gist-');
   const packagePath = path.join(outputDir, 'migration.zip');
-  await fs.writeFile(packagePath, Buffer.from(gistFile.content, 'base64'));
+  await fs.writeFile(packagePath, Buffer.from(base64Content, 'base64'));
   return {
     packagePath,
     gist,

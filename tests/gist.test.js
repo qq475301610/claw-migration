@@ -1,4 +1,4 @@
-import fs from 'node:fs/promises';
+﻿import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -60,6 +60,44 @@ test('gist transport uploads and downloads base64 zip payloads', async () => {
   assert.equal(buffer.toString('utf8'), 'zip-content');
   await downloadResult.cleanup();
   await fs.rm(dir, { recursive: true, force: true });
+});
+
+test('gist transport downloads truncated base64 files through raw_url', async () => {
+  const fetchImpl = async (url) => {
+    if (url === 'https://api.github.com/gists/gist-large') {
+      return {
+        ok: true,
+        json: async () => ({
+          files: {
+            'migration.zip.base64': {
+              truncated: true,
+              raw_url: 'https://gist.githubusercontent.com/example/raw/migration.zip.base64',
+              content: 'partial'
+            }
+          }
+        })
+      };
+    }
+
+    if (url === 'https://gist.githubusercontent.com/example/raw/migration.zip.base64') {
+      return {
+        ok: true,
+        text: async () => Buffer.from('zip-content').toString('base64')
+      };
+    }
+
+    throw new Error(`Unexpected url: ${url}`);
+  };
+
+  const result = await downloadPackageFromGist({
+    gistId: 'gist-large',
+    fetchImpl,
+    env: { GITHUB_TOKEN: 'token' }
+  });
+
+  const buffer = await fs.readFile(result.packagePath);
+  assert.equal(buffer.toString('utf8'), 'zip-content');
+  await result.cleanup();
 });
 
 test('gist transport resolves an existing gist by remoteKey before upload', async () => {
