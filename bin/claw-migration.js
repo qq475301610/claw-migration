@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 import process from 'node:process';
 import {
   formatActionPreview,
@@ -7,6 +7,7 @@ import {
   previewPush,
   pullAgentMigration,
   pushAgentMigration,
+  runMigrationSetup,
   verifyMigration
 } from '../src/index.js';
 import { promptYesNo } from '../src/utils.js';
@@ -51,6 +52,17 @@ async function main() {
   const subcommand = args._[1];
   const options = commandOptions(args);
 
+  if (command === 'setup') {
+    const result = await runMigrationSetup({
+      openClawDir: options.openClawDir,
+      logger: console
+    });
+    if (!result) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   if (command === 'push') {
     const result = await pushAgentMigration(options);
     console.log(JSON.stringify(result, null, 2));
@@ -92,11 +104,19 @@ async function main() {
     return;
   }
 
-  console.error('Usage: claw-migration <push|pull|preview push|preview pull|verify> [options]');
+  console.error('Usage: claw-migration <setup|push|pull|preview push|preview pull|verify> [options]');
   process.exitCode = 1;
 }
 
 main().catch((error) => {
   console.error(error.stack ?? error.message);
+  if (error.stderr) {
+    console.error('\n[stderr]');
+    console.error(error.stderr.trimEnd());
+  }
+  if (error.stdout) {
+    console.error('\n[stdout]');
+    console.error(error.stdout.trimEnd());
+  }
   process.exitCode = 1;
 });

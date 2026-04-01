@@ -1,9 +1,11 @@
-﻿import fs from 'node:fs/promises';
-import { DEFAULT_GIST_FILE_NAME, GITHUB_TOKEN_ENV_VARS } from './constants.js';
+import { GITHUB_TOKEN_ENV_VARS } from './constants.js';
 import { downloadPackageFromGist, upsertPackageToGist } from './gist.js';
-import { pathExists } from './utils.js';
 
-function resolveGitHubToken(env = process.env) {
+function resolveGitHubToken(remoteConfig, env = process.env) {
+  const configuredToken = remoteConfig.settings?.token;
+  if (configuredToken) {
+    return configuredToken;
+  }
   for (const key of GITHUB_TOKEN_ENV_VARS) {
     if (env[key]) {
       return env[key];
@@ -12,44 +14,67 @@ function resolveGitHubToken(env = process.env) {
   return null;
 }
 
+function getRemoteLocator(remoteConfig, context = {}) {
+  return {
+    gistId: remoteConfig.settings?.gistId ?? null,
+    remoteKey: remoteConfig.settings?.remoteKey ?? context.options?.agentId ?? null,
+    token: remoteConfig.settings?.token ?? null
+  };
+}
+
 function createGithubProvider(remoteConfig, dependencies = {}) {
   return {
     async validateConfig() {
       const blockers = [];
-      if (!resolveGitHubToken(dependencies.env ?? process.env)) {
-        blockers.push('GitHub provider requires OPENCLAW_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN.');
+      if (!resolveGitHubToken(remoteConfig, dependencies.env ?? process.env)) {
+        blockers.push('GitHub provider requires remotes.<name>.settings.token or OPENCLAW_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN.');
       }
       return { blockers };
     },
-    async previewPush() {
+    async previewPush(context) {
       const notes = [];
-      if (!remoteConfig.settings?.gistId) {
-        notes.push('Push will create a new private gist because settings.gistId is not configured.');
+      const locator = getRemoteLocator(remoteConfig, context);
+      if (locator.remoteKey) {
+        notes.push(`Push will reuse or create the GitHub gist associated with remoteKey '${locator.remoteKey}'.`);
+      } else if (!locator.gistId) {
+        notes.push('Push will create a new private gist because neither settings.remoteKey nor settings.gistId is configured.');
+      } else {
+        notes.push(`Push will update the configured gistId '${locator.gistId}'.`);
       }
       return { notes };
     },
     async pushPackage(context) {
+      const locator = getRemoteLocator(remoteConfig, context);
       return upsertPackageToGist({
         zipPath: context.zipPath,
         manifest: context.manifest,
-        gistId: remoteConfig.settings?.gistId,
+        gistId: locator.gistId,
+        remoteKey: locator.remoteKey,
+        configuredToken: locator.token,
         fetchImpl: dependencies.fetchImpl,
         env: dependencies.env
       });
     },
-    async previewPull() {
+    async previewPull(context) {
       const blockers = [];
-      if (!remoteConfig.settings?.gistId) {
-        blockers.push('GitHub pull requires remotes.<name>.settings.gistId.');
+      const notes = [];
+      const locator = getRemoteLocator(remoteConfig, context);
+      if (!locator.gistId && !locator.remoteKey) {
+        blockers.push('GitHub pull requires remotes.<name>.settings.remoteKey or remotes.<name>.settings.gistId.');
+      } else if (locator.remoteKey && !locator.gistId) {
+        notes.push(`Pull will resolve the latest gist for remoteKey '${locator.remoteKey}'.`);
       }
-      return { blockers };
+      return { blockers, notes };
     },
-    async pullPackage() {
-      if (!remoteConfig.settings?.gistId) {
-        throw new Error('GitHub pull requires remotes.<name>.settings.gistId.');
+    async pullPackage(context) {
+      const locator = getRemoteLocator(remoteConfig, context);
+      if (!locator.gistId && !locator.remoteKey) {
+        throw new Error('GitHub pull requires remotes.<name>.settings.remoteKey or remotes.<name>.settings.gistId.');
       }
       return downloadPackageFromGist({
-        gistId: remoteConfig.settings.gistId,
+        gistId: locator.gistId,
+        remoteKey: locator.remoteKey,
+        configuredToken: locator.token,
         fetchImpl: dependencies.fetchImpl,
         env: dependencies.env
       });
@@ -82,7 +107,7 @@ export function createProvider(remoteConfig, dependencies = {}) {
     case 'github':
       return createGithubProvider(remoteConfig, dependencies);
     case 'webdav':
-      return createWebDavProvider(remoteConfig, dependencies);
+      return createWebDavProvider();
     default:
       return {
         async validateConfig() {

@@ -1,4 +1,4 @@
-﻿import fs from 'node:fs/promises';
+import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -85,7 +85,7 @@ async function createOpenClawState(rootDir, { includeAgent = true, includeSuppor
             remotes: {
               primary: {
                 provider: 'github',
-                settings: {}
+                settings: { token: 'configured-token' }
               }
             },
             transfer: {
@@ -158,7 +158,7 @@ test('preview push reports remote, bindings, and gateway actions', async () => {
   const preview = await previewPush({
     openClawDir: state.openClawDir,
     agentId: 'main',
-    env: { GITHUB_TOKEN: 'token' }
+    env: {}
   });
 
   assert.equal(preview.ok, true);
@@ -179,7 +179,7 @@ test('push uploads package, disables only target agent bindings, and records gis
   const result = await pushAgentMigration({
     openClawDir: state.openClawDir,
     agentId: 'main',
-    env: { GITHUB_TOKEN: 'token' },
+    env: {},
     fetchImpl: async () => ({
       ok: true,
       json: async () => ({ id: 'gist-123', html_url: 'https://gist.github.com/example/gist-123' })
@@ -225,7 +225,7 @@ test('preview pull reports dependency blockers from remote package', async () =>
   const preview = await previewPull({
     openClawDir: targetState.openClawDir,
     agentId: 'main',
-    env: { GITHUB_TOKEN: 'token' },
+    env: {},
     fetchImpl: await makeRemoteFetchForZip(zipPath)
   });
 
@@ -264,7 +264,7 @@ test('pull imports package, enables bindings, clears disabled snapshot, and rest
   const result = await pullAgentMigration({
     openClawDir: targetState.openClawDir,
     agentId: 'main',
-    env: { GITHUB_TOKEN: 'token' },
+    env: {},
     fetchImpl: await makeRemoteFetchForZip(zipPath),
     restartGateway: async () => {
       restartCalls.push('restart');
@@ -283,3 +283,6 @@ test('pull imports package, enables bindings, clears disabled snapshot, and rest
 
   await fs.rm(rootDir, { recursive: true, force: true });
 });
+
+
+

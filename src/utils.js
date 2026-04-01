@@ -64,9 +64,27 @@ export async function collectFiles(rootDir) {
   return files.sort();
 }
 
+function normalizeSpawnCommand(command, args) {
+  const isWindows = os.platform() === 'win32';
+  if (!isWindows) {
+    return { command, args };
+  }
+
+  const lower = command.toLowerCase();
+  if (lower.endsWith('.cmd') || lower.endsWith('.bat')) {
+    return {
+      command: process.env.ComSpec || 'cmd.exe',
+      args: ['/d', '/c', command, ...args]
+    };
+  }
+
+  return { command, args };
+}
+
 export async function execFile(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const normalized = normalizeSpawnCommand(command, args);
+    const child = spawn(normalized.command, normalized.args, {
       cwd: options.cwd,
       env: options.env ?? process.env,
       stdio: ['ignore', 'pipe', 'pipe']
@@ -89,7 +107,7 @@ export async function execFile(command, args, options = {}) {
         resolve({ stdout, stderr });
         return;
       }
-      const error = new Error(`Command failed (${code}): ${command} ${args.join(' ')}`);
+      const error = new Error(`Command failed (${code}): ${normalized.command} ${normalized.args.join(' ')}`);
       error.stdout = stdout;
       error.stderr = stderr;
       reject(error);

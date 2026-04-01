@@ -1,21 +1,32 @@
-﻿import path from 'node:path';
+import path from 'node:path';
 import { disableAgentBindings, enableAgentBindings } from './binding-state.js';
 import { createMigrationArchive } from './export-service.js';
 import { formatPreview, formatVerify } from './format.js';
 import { restartGateway } from './gateway.js';
 import { importMigrationPackage } from './import-service.js';
 import { backupPath, restoreBackup } from './import-support.js';
-import { getAgentBindings, loadOpenClawConfigForPlugin, resolveRemoteConfig } from './plugin-config.js';
+import { ensurePluginConfigShape, getAgentBindings, loadOpenClawConfigForPlugin, resolveRemoteConfig } from './plugin-config.js';
 import { createProvider } from './providers.js';
 import { previewMigrationImport, verifyMigrationPackage } from './preview-service.js';
 import { findAgent } from './openclaw-state.js';
-import { pathExists, readJson, removeIfExists, writeJson } from './utils.js';
+import { readJson, writeJson } from './utils.js';
 
 function summarizeBindingTargets(bindings) {
   return bindings.map((binding) => ({
     channel: binding?.match?.channel ?? null,
     accountId: binding?.match?.accountId ?? null
   }));
+}
+
+function describeCommandFailure(error) {
+  const parts = [error.message];
+  if (error.stderr) {
+    parts.push(`[stderr]\n${String(error.stderr).trimEnd()}`);
+  }
+  if (error.stdout) {
+    parts.push(`[stdout]\n${String(error.stdout).trimEnd()}`);
+  }
+  return parts.join('\n');
 }
 
 async function buildProviderContext(options) {
@@ -107,6 +118,7 @@ export async function pushAgentMigration(options) {
 
       let disabledBindings = [];
       let configBackup = null;
+      const warnings = [];
       const configPath = path.join(context.openClawDir, 'openclaw.json');
       try {
         if (context.pluginConfig.switchBindingsOnPush || remoteResult.id) {
@@ -120,7 +132,8 @@ export async function pushAgentMigration(options) {
             disabledBindings = disabled.disabledBindings;
           }
 
-          nextConfig.plugins.entries['claw-migration'].config.state.remotes[context.remoteName] = {
+          const currentPluginConfig = ensurePluginConfigShape(nextConfig);
+          currentPluginConfig.state.remotes[context.remoteName] = {
             lastPushAt: new Date().toISOString(),
             lastPackage: {
               gistId: remoteResult.id ?? context.remoteConfig?.settings?.gistId ?? null,
@@ -128,15 +141,21 @@ export async function pushAgentMigration(options) {
             }
           };
           if (context.remoteConfig?.provider === 'github' && remoteResult.id) {
-            nextConfig.plugins.entries['claw-migration'].config.remotes[context.remoteName].settings ??= {};
-            nextConfig.plugins.entries['claw-migration'].config.remotes[context.remoteName].settings.gistId = remoteResult.id;
+            currentPluginConfig.remotes[context.remoteName].settings ??= {};
+            currentPluginConfig.remotes[context.remoteName].settings.gistId = remoteResult.id;
           }
 
-          await writeJson(configPath, nextConfig);
+        await writeJson(configPath, nextConfig);
         }
 
+        let restartedGateway = false;
         if (context.pluginConfig.restartGatewayOnPush) {
-          await (options.restartGateway ?? restartGateway)({ runner: options.commandRunner });
+          try {
+            await (options.restartGateway ?? restartGateway)({ runner: options.commandRunner });
+            restartedGateway = true;
+          } catch (error) {
+            warnings.push(`Gateway restart reported an error after push, but migration changes were kept.\n${describeCommandFailure(error)}`);
+          }
         }
 
         return {
@@ -150,7 +169,8 @@ export async function pushAgentMigration(options) {
           },
           agentId: options.agentId,
           disabledBindings: summarizeBindingTargets(disabledBindings),
-          restartedGateway: context.pluginConfig.restartGatewayOnPush
+          restartedGateway,
+          warnings
         };
       } catch (error) {
         if (configBackup) {
@@ -243,6 +263,7 @@ export async function pullAgentMigration(options) {
       const configPath = path.join(context.openClawDir, 'openclaw.json');
       const configBackup = await backupPath(configPath, `pull-bak-${Date.now()}`);
       let enabledBindings = [];
+      const warnings = [];
       try {
         const currentConfig = await readJson(configPath);
         let nextConfig = currentConfig;
@@ -252,16 +273,27 @@ export async function pullAgentMigration(options) {
           enabledBindings = enabled.enabledBindings;
         }
 
-        nextConfig.plugins.entries['claw-migration'].config.state.remotes[context.remoteName] = {
+        const currentPluginConfig = ensurePluginConfigShape(nextConfig);
+        currentPluginConfig.state.remotes[context.remoteName] = {
           lastPullAt: new Date().toISOString(),
           lastPackage: {
-            gistId: context.remoteConfig?.settings?.gistId ?? null
+            gistId: remotePackage.gistId ?? context.remoteConfig?.settings?.gistId ?? null
           }
         };
+        if (context.remoteConfig?.provider === 'github' && remotePackage.gistId) {
+          currentPluginConfig.remotes[context.remoteName].settings ??= {};
+          currentPluginConfig.remotes[context.remoteName].settings.gistId = remotePackage.gistId;
+        }
         await writeJson(configPath, nextConfig);
 
+        let restartedGateway = false;
         if (context.pluginConfig.restartGatewayOnPull) {
-          await (options.restartGateway ?? restartGateway)({ runner: options.commandRunner });
+          try {
+            await (options.restartGateway ?? restartGateway)({ runner: options.commandRunner });
+            restartedGateway = true;
+          } catch (error) {
+            warnings.push(`Gateway restart reported an error after pull, but imported changes were kept.\n${describeCommandFailure(error)}`);
+          }
         }
 
         return {
@@ -271,11 +303,12 @@ export async function pullAgentMigration(options) {
           remote: {
             name: context.remoteName,
             provider: context.remoteConfig.provider,
-            id: context.remoteConfig?.settings?.gistId ?? null
+            id: remotePackage.gistId ?? context.remoteConfig?.settings?.gistId ?? null
           },
           importResult,
           enabledBindings: summarizeBindingTargets(enabledBindings),
-          restartedGateway: context.pluginConfig.restartGatewayOnPull
+          restartedGateway,
+          warnings
         };
       } catch (error) {
         if (configBackup) {
@@ -354,3 +387,6 @@ export function formatActionPreview(preview) {
 export function formatVerification(result) {
   return formatVerify(result);
 }
+
+
+

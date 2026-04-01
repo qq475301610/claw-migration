@@ -1,0 +1,103 @@
+{
+  "id": "claw-migration",
+  "name": "Claw Migration",
+  "description": "Move a single OpenClaw agent between devices with preview-first push and pull workflows.",
+  "version": "0.1.0",
+  "skills": [
+    "./skills"
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "defaultRemote": {
+        "type": "string"
+      },
+      "remotes": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": [
+                "github",
+                "webdav"
+              ]
+            },
+            "settings": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "gistId": {
+                  "type": "string"
+                },
+                "remoteKey": {
+                  "type": "string"
+                },
+                "token": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "transfer": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "includeTranscripts": {
+            "type": "boolean"
+          }
+        }
+      },
+      "switchBindingsOnPush": {
+        "type": "boolean"
+      },
+      "switchBindingsOnPull": {
+        "type": "boolean"
+      },
+      "restartGatewayOnPush": {
+        "type": "boolean"
+      },
+      "restartGatewayOnPull": {
+        "type": "boolean"
+      },
+      "state": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "disabledBindingsByAgent": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          },
+          "disabledChannelAccountsByAgent": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          },
+          "remotes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    }
+  }
+}

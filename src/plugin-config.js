@@ -1,10 +1,11 @@
-﻿import path from 'node:path';
+import path from 'node:path';
 import { resolveOpenClawDir } from './openclaw-state.js';
 import { deepClone, readJson, writeJson } from './utils.js';
 
 export const PLUGIN_NAME = 'claw-migration';
+export const DEFAULT_REMOTE_NAME = 'github-main';
 
-function ensurePluginConfigShape(config) {
+export function ensurePluginConfigShape(config) {
   config.plugins ??= {};
   config.plugins.entries ??= {};
   config.plugins.entries[PLUGIN_NAME] ??= {};
@@ -12,7 +13,14 @@ function ensurePluginConfigShape(config) {
   config.plugins.entries[PLUGIN_NAME].config ??= {};
 
   const pluginConfig = config.plugins.entries[PLUGIN_NAME].config;
+  pluginConfig.defaultRemote ??= DEFAULT_REMOTE_NAME;
   pluginConfig.remotes ??= {};
+  pluginConfig.remotes[pluginConfig.defaultRemote] ??= {
+    provider: 'github',
+    settings: {}
+  };
+  pluginConfig.remotes[pluginConfig.defaultRemote].provider ??= 'github';
+  pluginConfig.remotes[pluginConfig.defaultRemote].settings ??= {};
   pluginConfig.transfer ??= {};
   pluginConfig.transfer.includeTranscripts ??= false;
   pluginConfig.switchBindingsOnPush ??= true;
@@ -21,6 +29,7 @@ function ensurePluginConfigShape(config) {
   pluginConfig.restartGatewayOnPull ??= true;
   pluginConfig.state ??= {};
   pluginConfig.state.disabledBindingsByAgent ??= {};
+  pluginConfig.state.disabledChannelAccountsByAgent ??= {};
   pluginConfig.state.remotes ??= {};
   return pluginConfig;
 }
@@ -71,6 +80,25 @@ export async function updatePluginConfigFile({ openClawDir, mutate }) {
   await mutate({ config: nextConfig, pluginConfig });
   await writeJson(configPath, nextConfig);
   return nextConfig;
+}
+
+export async function seedPluginConfigFile({ config, runtime, openClawDir } = {}) {
+  const writeConfig = runtime?.config?.writeConfigFile;
+  if (typeof writeConfig !== 'function') {
+    return false;
+  }
+
+  const sourceConfig = config ?? (await loadOpenClawConfigForPlugin({ openClawDir })).config;
+  const nextConfig = deepClone(sourceConfig);
+  const before = JSON.stringify(sourceConfig);
+  ensurePluginConfigShape(nextConfig);
+  const after = JSON.stringify(nextConfig);
+  if (before === after) {
+    return false;
+  }
+
+  await writeConfig(nextConfig);
+  return true;
 }
 
 export function getAgentBindings(config, agentId) {

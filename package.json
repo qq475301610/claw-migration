@@ -1,14 +1,35 @@
-﻿{
+{
   "name": "claw-migration",
   "version": "0.1.0",
   "description": "OpenClaw plugin and CLI for exporting, previewing, verifying, and importing single-agent migration packages.",
   "type": "module",
+  "files": [
+    "bin",
+    "docs",
+    "skills",
+    "src",
+    ".codex-plugin",
+    "flake.nix",
+    "openclaw.plugin.json",
+    "README.md",
+    "README.zh-CN.md"
+  ],
   "bin": {
     "claw-migration": "./bin/claw-migration.js"
   },
   "main": "./src/index.js",
   "scripts": {
     "test": "node --test --test-concurrency=1 --test-isolation=none ./tests/*.test.js"
+  },
+  "openclaw": {
+    "extensions": [
+      "./src/index.js"
+    ],
+    "install": {
+      "localPath": ".",
+      "npmSpec": "github:qq475301610/claw-migration",
+      "defaultChoice": "local"
+    }
   },
   "engines": {
     "node": ">=20.0.0"
