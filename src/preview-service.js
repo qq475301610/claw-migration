@@ -8,7 +8,7 @@ import { readJson, removeIfExists } from './utils.js';
 
 async function materializeSourcePackage(options) {
   if (options.from === 'gist') {
-    return downloadPackageFromGist({ gistId: options.gistId, fetchImpl: options.fetchImpl, env: options.env });
+    return downloadPackageFromGist({ gistId: options.gistId, remoteKey: options.remoteKey, fetchImpl: options.fetchImpl, env: options.env, configuredToken: options.configuredToken });
   }
   return materializeLocalPackage({ inputPath: options.inputPath });
 }
@@ -17,7 +17,7 @@ export async function verifyMigrationPackage(options) {
   const source = await materializeSourcePackage(options);
   try {
     const inspection = await extractPackageForInspection({ packagePath: source.packagePath, agentId: options.agentId });
-    const files = await summarizePackageContents(inspection.extractedDir);
+    const files = await summarizePackageContents(inspection.packageRoot);
     return {
       ok: inspection.blockers.length === 0,
       manifest: inspection.manifest,
@@ -68,7 +68,7 @@ export async function previewMigrationImport(options) {
       manifest: inspection.manifest,
       agentId: inspection.agentId,
       packagePath: source.packagePath,
-      extractedDir: inspection.extractedDir,
+      extractedDir: inspection.packageRoot,
       overwrite: targetAgent
         ? ['agents.list[agentId]', 'bindings[agentId]', 'agent files', 'sessions', 'workspace files']
         : [],

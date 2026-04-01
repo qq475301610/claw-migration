@@ -71,6 +71,26 @@ async function copyRequiredWorkspace(workspacePath, stagingDir, warnings) {
   }
 }
 
+async function findPackageRoot(extractedDir) {
+  const directManifest = path.join(extractedDir, 'manifest.json');
+  if (await pathExists(directManifest)) {
+    return extractedDir;
+  }
+
+  const entries = await fs.readdir(extractedDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const candidate = path.join(extractedDir, entry.name);
+    if (await pathExists(path.join(candidate, 'manifest.json'))) {
+      return candidate;
+    }
+  }
+
+  return extractedDir;
+}
+
 export async function stageMigrationPackage({ openClawDir, agentId, includeTranscripts = false, notes }) {
   const state = await loadOpenClawState({ openClawDir, agentId });
   const warnings = [];
@@ -131,7 +151,8 @@ export async function stageMigrationPackage({ openClawDir, agentId, includeTrans
 }
 
 export async function validateExtractedPackage({ extractedDir, agentId }) {
-  const manifest = await readJson(path.join(extractedDir, 'manifest.json'));
+  const packageRoot = await findPackageRoot(extractedDir);
+  const manifest = await readJson(path.join(packageRoot, 'manifest.json'));
   const effectiveAgentId = agentId ?? manifest?.source?.agentId;
   const requiredFiles = [
     ...PACKAGE_ROOT_FILES,
@@ -142,7 +163,7 @@ export async function validateExtractedPackage({ extractedDir, agentId }) {
 
   const blockers = [];
   for (const relativePath of requiredFiles) {
-    const fullPath = path.join(extractedDir, relativePath);
+    const fullPath = path.join(packageRoot, relativePath);
     if (!(await pathExists(fullPath))) {
       blockers.push(`Missing required package file: ${relativePath}`);
     }
@@ -150,7 +171,7 @@ export async function validateExtractedPackage({ extractedDir, agentId }) {
 
   const checksums = manifest?.checksums ?? {};
   for (const [relativePath, expected] of Object.entries(checksums)) {
-    const fullPath = path.join(extractedDir, relativePath);
+    const fullPath = path.join(packageRoot, relativePath);
     if (!(await pathExists(fullPath))) {
       blockers.push(`Checksum entry missing file: ${relativePath}`);
       continue;
@@ -165,7 +186,8 @@ export async function validateExtractedPackage({ extractedDir, agentId }) {
     manifest,
     agentId: effectiveAgentId,
     blockers,
-    warnings: manifest?.warnings ?? []
+    warnings: manifest?.warnings ?? [],
+    packageRoot
   };
 }
 
@@ -176,7 +198,7 @@ export async function extractPackageForInspection({ packagePath, agentId }) {
   return { extractedDir, ...validation };
 }
 
-export async function summarizePackageContents(extractedDir) {
-  const files = await collectFiles(extractedDir);
-  return uniq(files.map((filePath) => relativeFrom(extractedDir, filePath)));
+export async function summarizePackageContents(packageRoot) {
+  const files = await collectFiles(packageRoot);
+  return uniq(files.map((filePath) => relativeFrom(packageRoot, filePath)));
 }
