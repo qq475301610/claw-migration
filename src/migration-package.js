@@ -71,24 +71,27 @@ async function copyRequiredWorkspace(workspacePath, stagingDir, warnings) {
   }
 }
 
+async function findManifestRecursively(rootDir) {
+  const queue = [rootDir];
+  while (queue.length > 0) {
+    const currentDir = queue.shift();
+    if (await pathExists(path.join(currentDir, 'manifest.json'))) {
+      return currentDir;
+    }
+
+    const entries = await fs.readdir(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        queue.push(path.join(currentDir, entry.name));
+      }
+    }
+  }
+
+  return null;
+}
+
 async function findPackageRoot(extractedDir) {
-  const directManifest = path.join(extractedDir, 'manifest.json');
-  if (await pathExists(directManifest)) {
-    return extractedDir;
-  }
-
-  const entries = await fs.readdir(extractedDir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-    const candidate = path.join(extractedDir, entry.name);
-    if (await pathExists(path.join(candidate, 'manifest.json'))) {
-      return candidate;
-    }
-  }
-
-  return extractedDir;
+  return (await findManifestRecursively(extractedDir)) ?? extractedDir;
 }
 
 export async function stageMigrationPackage({ openClawDir, agentId, includeTranscripts = false, notes }) {
