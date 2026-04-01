@@ -5,6 +5,7 @@ import { findAgent, resolveOpenClawDir } from './openclaw-state.js';
 import { previewMigrationImport } from './preview-service.js';
 import { backupPath, copyTree, rebuildMemoryIndex, restoreBackup } from './import-support.js';
 import { pathExists, readJson, removeIfExists, writeJson } from './utils.js';
+import { emitProgress } from './progress.js';
 
 function minimalTargetConfig(openClawDir) {
   return {
@@ -27,6 +28,7 @@ function minimalTargetConfig(openClawDir) {
 }
 
 export async function importMigrationPackage(options) {
+  emitProgress(options, 'Previewing import', options.agentId);
   const preview = await previewMigrationImport(options);
   if (preview.blockers.length > 0) {
     const error = new Error(`Import blocked:\n- ${preview.blockers.join('\n- ')}`);
@@ -46,8 +48,10 @@ export async function importMigrationPackage(options) {
   let workspaceBackup = null;
 
   try {
+    emitProgress(options, 'Loading package config', preview.extractedDir);
     const sourceConfig = await readJson(path.join(preview.extractedDir, 'openclaw.json'));
     const targetConfig = (await pathExists(configPath)) ? await readJson(configPath) : minimalTargetConfig(openClawDir);
+    emitProgress(options, 'Merging openclaw.json', options.agentId);
     const mergedConfig = mergeOpenClawConfig({
       sourceConfig,
       targetConfig,
@@ -59,16 +63,21 @@ export async function importMigrationPackage(options) {
     const targetWorkspace = mergedAgent?.workspace ?? preview.target.workspacePath;
     workspaceBackup = await backupPath(targetWorkspace, `migration-bak-${timestamp}`);
 
+    emitProgress(options, 'Writing merged config', configPath);
     await writeJson(configPath, mergedConfig);
 
     const extractedAgentRoot = path.join(preview.extractedDir, 'agents', preview.agentId);
     const targetAgentRoot = path.join(openClawDir, 'agents', preview.agentId);
+    emitProgress(options, 'Restoring agent files', targetAgentRoot);
     await copyTree(path.join(extractedAgentRoot, 'agent'), path.join(targetAgentRoot, 'agent'));
+    emitProgress(options, 'Restoring sessions', path.join(targetAgentRoot, 'sessions'));
     await copyTree(path.join(extractedAgentRoot, 'sessions'), path.join(targetAgentRoot, 'sessions'));
+    emitProgress(options, 'Restoring workspace', targetWorkspace);
     await copyTree(path.join(preview.extractedDir, 'workspace'), targetWorkspace);
 
-    const indexResult = options.skipReindex ? { ok: true } : await rebuildMemoryIndex({ agentId: preview.agentId });
+    const indexResult = options.skipReindex ? { ok: true } : await rebuildMemoryIndex({ agentId: preview.agentId, onProgress: options.onProgress });
 
+    emitProgress(options, 'Import complete', preview.agentId);
     return {
       ok: true,
       agentId: preview.agentId,
@@ -97,3 +106,4 @@ export async function importMigrationPackage(options) {
     await preview.packageCleanup?.();
   }
 }
+

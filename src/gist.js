@@ -2,6 +2,7 @@
 import path from 'node:path';
 import { DEFAULT_GIST_FILE_NAME, GITHUB_TOKEN_ENV_VARS } from './constants.js';
 import { makeTempDir, pathExists, sha256Buffer } from './utils.js';
+import { emitProgress } from './progress.js';
 
 const DESCRIPTION_PREFIX = 'OpenClaw migration';
 
@@ -107,22 +108,26 @@ export async function findGistByRemoteKey({ remoteKey, fetchImpl, env = process.
   return null;
 }
 
-export async function upsertPackageToGist({ zipPath, manifest, gistId, remoteKey, fetchImpl, env = process.env, configuredToken }) {
+export async function upsertPackageToGist({ zipPath, manifest, gistId, remoteKey, fetchImpl, env = process.env, configuredToken, onProgress }) {
+  emitProgress(onProgress, 'Preparing GitHub upload', remoteKey ?? gistId ?? 'new gist');
   const token = resolveGitHubToken({ env, configuredToken });
   if (!token) {
     throw new Error('Missing GitHub token. Configure remotes.<name>.settings.token or set OPENCLAW_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN.');
   }
 
+  emitProgress(onProgress, 'Resolving remote target', remoteKey ?? gistId ?? 'new gist');
   const existing = !gistId && remoteKey
     ? await findGistByRemoteKey({ remoteKey, fetchImpl, env, configuredToken: token })
     : null;
   const resolvedGistId = gistId ?? existing?.id ?? null;
 
+  emitProgress(onProgress, 'Reading archive', zipPath);
   const zipBuffer = await fs.readFile(zipPath);
   const base64Zip = zipBuffer.toString('base64');
   const description = buildDescription({ manifest, remoteKey });
   const method = resolvedGistId ? 'PATCH' : 'POST';
   const url = resolvedGistId ? `https://api.github.com/gists/${resolvedGistId}` : 'https://api.github.com/gists';
+  emitProgress(onProgress, 'Sending GitHub request', method + ' ' + (resolvedGistId ?? 'new'));
   const response = await githubFetch(url, {
     method,
     headers: {
@@ -140,6 +145,7 @@ export async function upsertPackageToGist({ zipPath, manifest, gistId, remoteKey
   }, fetchImpl);
 
   const payload = await response.json();
+  emitProgress(onProgress, 'GitHub upload finished', payload.id ?? payload.html_url ?? 'ok');
   return {
     kind: 'gist',
     id: payload.id,
@@ -152,7 +158,8 @@ export async function uploadPackageToGist(args) {
   return upsertPackageToGist(args);
 }
 
-export async function downloadPackageFromGist({ gistId, remoteKey, fetchImpl, env = process.env, configuredToken }) {
+export async function downloadPackageFromGist({ gistId, remoteKey, fetchImpl, env = process.env, configuredToken, onProgress }) {
+  emitProgress(onProgress, 'Resolving remote package', remoteKey ?? gistId ?? 'gist');
   const token = resolveGitHubToken({ env, configuredToken });
   if (!token) {
     throw new Error('Missing GitHub token. Configure remotes.<name>.settings.token or set OPENCLAW_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN.');
@@ -170,14 +177,17 @@ export async function downloadPackageFromGist({ gistId, remoteKey, fetchImpl, en
   }, fetchImpl);
   const gist = await response.json();
   const gistFile = gist?.files?.[DEFAULT_GIST_FILE_NAME];
+  emitProgress(onProgress, 'Downloading archive payload', gistFile?.truncated ? 'raw_url' : 'content');
   const base64Content = await loadGistFileContent(gistFile, token, fetchImpl);
   if (!base64Content) {
     throw new Error(`Gist ${resolvedGistId} does not contain ${DEFAULT_GIST_FILE_NAME}.`);
   }
 
+  emitProgress(onProgress, 'Decoding base64 payload', resolvedGistId);
   const outputDir = await makeTempDir('openclaw-migration-gist-');
   const packagePath = path.join(outputDir, 'migration.zip');
   await fs.writeFile(packagePath, Buffer.from(base64Content, 'base64'));
+  emitProgress(onProgress, 'Archive downloaded', packagePath);
   return {
     packagePath,
     gist,
@@ -189,4 +199,5 @@ export async function downloadPackageFromGist({ gistId, remoteKey, fetchImpl, en
     }
   };
 }
+
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 import process from 'node:process';
 import {
   formatActionPreview,
@@ -42,7 +42,13 @@ function commandOptions(args) {
     remoteName: args.remote,
     notes: args.notes,
     skipReindex: Boolean(args['skip-reindex']),
-    confirm: Boolean(args.yes)
+    confirm: Boolean(args.yes),
+    onProgress: args.quiet
+      ? undefined
+      : ({ step, detail }) => {
+          const suffix = detail ? `: ${detail}` : '';
+          console.error(`[progress] ${step}${suffix}`);
+        }
   };
 }
 

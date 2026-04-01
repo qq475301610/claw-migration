@@ -1,4 +1,4 @@
-import path from 'node:path';
+﻿import path from 'node:path';
 import { disableAgentBindings, enableAgentBindings } from './binding-state.js';
 import { createMigrationArchive } from './export-service.js';
 import { formatPreview, formatVerify } from './format.js';
@@ -10,6 +10,7 @@ import { createProvider } from './providers.js';
 import { previewMigrationImport, verifyMigrationPackage } from './preview-service.js';
 import { findAgent } from './openclaw-state.js';
 import { readJson, writeJson } from './utils.js';
+import { emitProgress } from './progress.js';
 
 function summarizeBindingTargets(bindings) {
   return bindings.map((binding) => ({
@@ -30,6 +31,7 @@ function describeCommandFailure(error) {
 }
 
 async function buildProviderContext(options) {
+  emitProgress(options, 'Loading plugin config', options.openClawDir ?? '~/.openclaw');
   const loaded = await loadOpenClawConfigForPlugin({ openClawDir: options.openClawDir });
   const remoteSelection = resolveRemoteConfig(loaded.pluginConfig, options.remoteName);
   const blockers = [...remoteSelection.blockers];
@@ -62,6 +64,7 @@ export async function previewPush(options) {
   let archiveCleanup = async () => {};
   const warnings = [];
   if (blockers.length === 0) {
+    emitProgress(options, 'Creating migration archive', options.agentId);
     const archive = await createMigrationArchive({
       openClawDir: context.openClawDir,
       agentId: options.agentId,
@@ -92,6 +95,7 @@ export async function previewPush(options) {
 }
 
 export async function pushAgentMigration(options) {
+  emitProgress(options, 'Preparing push preview', options.agentId);
   const preview = await previewPush(options);
   try {
     if (preview.blockers.length > 0) {
@@ -101,6 +105,7 @@ export async function pushAgentMigration(options) {
     }
 
     const context = await buildProviderContext(options);
+    emitProgress(options, 'Creating migration archive', options.agentId);
     const archive = await createMigrationArchive({
       openClawDir: context.openClawDir,
       agentId: options.agentId,
@@ -109,6 +114,7 @@ export async function pushAgentMigration(options) {
     });
 
     try {
+      emitProgress(options, 'Pushing package to remote', context.remoteName);
       const remoteResult = await context.provider.pushPackage({
         zipPath: archive.zipPath,
         manifest: archive.manifest,
@@ -151,6 +157,8 @@ export async function pushAgentMigration(options) {
         let restartedGateway = false;
         if (context.pluginConfig.restartGatewayOnPush) {
           try {
+            emitProgress(options, 'Restarting gateway', 'push');
+            emitProgress(options, 'Restarting gateway', 'pull');
             await (options.restartGateway ?? restartGateway)({ runner: options.commandRunner });
             restartedGateway = true;
           } catch (error) {
@@ -201,8 +209,10 @@ export async function previewPull(options) {
   }
 
   if (blockers.length === 0) {
-    const remotePackage = await context.provider.pullPackage({ remoteConfig: context.remoteConfig, remoteName: context.remoteName });
+    emitProgress(options, 'Pulling package from remote', context.remoteName);
+    const remotePackage = await context.provider.pullPackage({ remoteConfig: context.remoteConfig, remoteName: context.remoteName, onProgress: options.onProgress });
     sourceCleanup = remotePackage.cleanup ?? sourceCleanup;
+    emitProgress(options, 'Previewing imported package', options.agentId);
     importPreview = await previewMigrationImport({
       from: 'local',
       inputPath: remotePackage.packagePath,
@@ -235,6 +245,7 @@ export async function previewPull(options) {
 }
 
 export async function pullAgentMigration(options) {
+  emitProgress(options, 'Preparing pull preview', options.agentId);
   const preview = await previewPull(options);
   try {
     if (preview.blockers.length > 0) {
@@ -249,8 +260,10 @@ export async function pullAgentMigration(options) {
     }
 
     const context = await buildProviderContext(options);
-    const remotePackage = await context.provider.pullPackage({ remoteConfig: context.remoteConfig, remoteName: context.remoteName });
+    emitProgress(options, 'Pulling package from remote', context.remoteName);
+    const remotePackage = await context.provider.pullPackage({ remoteConfig: context.remoteConfig, remoteName: context.remoteName, onProgress: options.onProgress });
     try {
+      emitProgress(options, 'Applying import', options.agentId);
       const importResult = await importMigrationPackage({
         from: 'local',
         inputPath: remotePackage.packagePath,
@@ -289,6 +302,8 @@ export async function pullAgentMigration(options) {
         let restartedGateway = false;
         if (context.pluginConfig.restartGatewayOnPull) {
           try {
+            emitProgress(options, 'Restarting gateway', 'push');
+            emitProgress(options, 'Restarting gateway', 'pull');
             await (options.restartGateway ?? restartGateway)({ runner: options.commandRunner });
             restartedGateway = true;
           } catch (error) {
@@ -345,7 +360,8 @@ export async function verifyMigration(options) {
     };
   }
 
-  const remotePackage = await context.provider.pullPackage({ remoteConfig: context.remoteConfig, remoteName: context.remoteName });
+  emitProgress(options, 'Pulling package from remote', context.remoteName);
+    const remotePackage = await context.provider.pullPackage({ remoteConfig: context.remoteConfig, remoteName: context.remoteName, onProgress: options.onProgress });
   try {
     return verifyMigrationPackage({
       from: 'local',
@@ -387,6 +403,7 @@ export function formatActionPreview(preview) {
 export function formatVerification(result) {
   return formatVerify(result);
 }
+
 
 
 

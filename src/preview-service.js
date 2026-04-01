@@ -5,6 +5,7 @@ import { extractPackageForInspection, summarizePackageContents } from './migrati
 import { resolveOpenClawDir } from './openclaw-state.js';
 import { findAgent } from './openclaw-state.js';
 import { readJson, removeIfExists } from './utils.js';
+import { emitProgress } from './progress.js';
 
 async function materializeSourcePackage(options) {
   if (options.from === 'gist') {
@@ -14,9 +15,12 @@ async function materializeSourcePackage(options) {
 }
 
 export async function verifyMigrationPackage(options) {
+  emitProgress(options, 'Preparing package source', options.from ?? (options.inputPath ? 'local' : 'remote'));
   const source = await materializeSourcePackage(options);
   try {
+    emitProgress(options, 'Extracting archive', source.packagePath);
     const inspection = await extractPackageForInspection({ packagePath: source.packagePath, agentId: options.agentId });
+    emitProgress(options, 'Validating package', inspection.agentId);
     const files = await summarizePackageContents(inspection.packageRoot);
     return {
       ok: inspection.blockers.length === 0,
@@ -31,10 +35,14 @@ export async function verifyMigrationPackage(options) {
 }
 
 export async function previewMigrationImport(options) {
+  emitProgress(options, 'Preparing package source', options.from ?? (options.inputPath ? 'local' : 'remote'));
   const source = await materializeSourcePackage(options);
   try {
+    emitProgress(options, 'Extracting archive', source.packagePath);
     const inspection = await extractPackageForInspection({ packagePath: source.packagePath, agentId: options.agentId });
+    emitProgress(options, 'Validating package', inspection.agentId);
     const openClawDir = resolveOpenClawDir({ openClawDir: options.openClawDir });
+    emitProgress(options, 'Inspecting target config', openClawDir);
 
     let targetConfig = null;
     try {
@@ -97,3 +105,4 @@ export async function previewMigrationImport(options) {
     throw error;
   }
 }
+
