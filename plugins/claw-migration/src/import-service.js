@@ -1,0 +1,99 @@
+﻿import fs from 'node:fs/promises';
+import path from 'node:path';
+import { mergeOpenClawConfig } from './merge.js';
+import { findAgent, resolveOpenClawDir } from './openclaw-state.js';
+import { previewMigrationImport } from './preview-service.js';
+import { backupPath, copyTree, rebuildMemoryIndex, restoreBackup } from './import-support.js';
+import { pathExists, readJson, removeIfExists, writeJson } from './utils.js';
+
+function minimalTargetConfig(openClawDir) {
+  return {
+    meta: {
+      lastTouchedVersion: null,
+      lastTouchedAt: new Date().toISOString()
+    },
+    agents: {
+      defaults: {
+        workspace: path.join(openClawDir, 'workspace')
+      },
+      list: []
+    },
+    gateway: {
+      port: 18789,
+      mode: 'local',
+      bind: 'loopback'
+    }
+  };
+}
+
+export async function importMigrationPackage(options) {
+  const preview = await previewMigrationImport(options);
+  if (preview.blockers.length > 0) {
+    const error = new Error(`Import blocked:\n- ${preview.blockers.join('\n- ')}`);
+    error.preview = preview;
+    throw error;
+  }
+  if (!options.confirm) {
+    const error = new Error('Import requires confirmation. Re-run with --yes after previewing.');
+    error.preview = preview;
+    throw error;
+  }
+
+  const openClawDir = resolveOpenClawDir({ openClawDir: options.openClawDir });
+  const configPath = path.join(openClawDir, 'openclaw.json');
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const configBackup = await backupPath(configPath, `migration-bak-${timestamp}`);
+  let workspaceBackup = null;
+
+  try {
+    const sourceConfig = await readJson(path.join(preview.extractedDir, 'openclaw.json'));
+    const targetConfig = (await pathExists(configPath)) ? await readJson(configPath) : minimalTargetConfig(openClawDir);
+    const mergedConfig = mergeOpenClawConfig({
+      sourceConfig,
+      targetConfig,
+      agentId: preview.agentId,
+      openClawDir
+    });
+
+    const mergedAgent = findAgent(mergedConfig, preview.agentId);
+    const targetWorkspace = mergedAgent?.workspace ?? preview.target.workspacePath;
+    workspaceBackup = await backupPath(targetWorkspace, `migration-bak-${timestamp}`);
+
+    await writeJson(configPath, mergedConfig);
+
+    const extractedAgentRoot = path.join(preview.extractedDir, 'agents', preview.agentId);
+    const targetAgentRoot = path.join(openClawDir, 'agents', preview.agentId);
+    await copyTree(path.join(extractedAgentRoot, 'agent'), path.join(targetAgentRoot, 'agent'));
+    await copyTree(path.join(extractedAgentRoot, 'sessions'), path.join(targetAgentRoot, 'sessions'));
+    await copyTree(path.join(preview.extractedDir, 'workspace'), targetWorkspace);
+
+    const indexResult = options.skipReindex ? { ok: true } : await rebuildMemoryIndex({ agentId: preview.agentId });
+
+    return {
+      ok: true,
+      agentId: preview.agentId,
+      configPath,
+      workspacePath: targetWorkspace,
+      backups: {
+        config: configBackup,
+        workspace: workspaceBackup
+      },
+      warning: indexResult.ok ? null : indexResult.warning
+    };
+  } catch (error) {
+    if (configBackup) {
+      await restoreBackup(configBackup, configPath);
+    }
+    if (workspaceBackup) {
+      const currentConfig = (await pathExists(configPath)) ? await readJson(configPath) : null;
+      const currentAgent = findAgent(currentConfig, preview.agentId);
+      if (currentAgent?.workspace) {
+        await restoreBackup(workspaceBackup, currentAgent.workspace);
+      }
+    }
+    throw error;
+  } finally {
+    await preview.sourceCleanup?.();
+    await preview.packageCleanup?.();
+  }
+}

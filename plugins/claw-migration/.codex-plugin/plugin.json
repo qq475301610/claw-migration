@@ -1,0 +1,40 @@
+﻿{
+  "name": "claw-migration",
+  "version": "0.1.0",
+  "description": "Push and pull complete OpenClaw agent migration packages through configured remotes.",
+  "author": {
+    "name": "Codex",
+    "email": "noreply@example.com",
+    "url": "https://openai.com/"
+  },
+  "homepage": "https://openai.com/",
+  "repository": "https://openai.com/",
+  "license": "MIT",
+  "keywords": [
+    "openclaw",
+    "migration",
+    "agent",
+    "gist"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Claw Migration",
+    "shortDescription": "Push and pull a single OpenClaw agent through a remote.",
+    "longDescription": "Configures remote-backed agent migration for OpenClaw, with preview-first workflows, bindings switching, and gateway restarts.",
+    "developerName": "Codex",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://openai.com/",
+    "privacyPolicyURL": "https://openai.com/policies/row-privacy-policy/",
+    "termsOfServiceURL": "https://openai.com/policies/terms-of-use/",
+    "defaultPrompt": [
+      "Preview a push for my main OpenClaw agent.",
+      "Pull an agent migration from my default remote.",
+      "Show me why a migration remote is blocked."
+    ],
+    "brandColor": "#0B6E4F"
+  }
+}
