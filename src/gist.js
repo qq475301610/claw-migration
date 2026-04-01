@@ -5,6 +5,8 @@ import { makeTempDir, pathExists, sha256Buffer } from './utils.js';
 import { emitProgress } from './progress.js';
 
 const DESCRIPTION_PREFIX = 'OpenClaw migration';
+const RAW_DOWNLOAD_TIMEOUT_MS = 120000;
+const RAW_PROGRESS_CHUNK_BYTES = 1024 * 1024;
 
 function resolveGitHubToken({ env = process.env, configuredToken } = {}) {
   if (configuredToken) {
@@ -34,6 +36,19 @@ function matchesRemoteKey(description, remoteKey) {
   return description.startsWith(`${DESCRIPTION_PREFIX}:${remoteKey}:`);
 }
 
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return 'unknown';
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 async function githubFetch(url, options = {}, fetchImpl = fetch) {
   const response = await fetchImpl(url, {
     ...options,
@@ -52,18 +67,61 @@ async function githubFetch(url, options = {}, fetchImpl = fetch) {
   return response;
 }
 
-async function loadGistFileContent(gistFile, token, fetchImpl = fetch) {
-  if (gistFile?.truncated && gistFile?.raw_url) {
-    const response = await fetchImpl(gistFile.raw_url, {
+async function downloadRawTextWithProgress(url, token, fetchImpl = fetch, onProgress) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new Error('GitHub raw gist download timed out.')), RAW_DOWNLOAD_TIMEOUT_MS);
+  try {
+    const response = await fetchImpl(url, {
       headers: {
         Authorization: `Bearer ${token}`
-      }
+      },
+      signal: controller.signal
     });
     if (!response.ok) {
       const body = await response.text();
       throw new Error(`GitHub raw gist download failed (${response.status}): ${body}`);
     }
-    return response.text();
+
+    if (!response.body || typeof response.body.getReader !== 'function') {
+      emitProgress(onProgress, 'Downloading archive payload', 'stream unavailable, buffering response');
+      return response.text();
+    }
+
+    const total = Number.parseInt(response.headers.get('content-length') ?? '', 10);
+    const reader = response.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+    let nextReportAt = RAW_PROGRESS_CHUNK_BYTES;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      chunks.push(value);
+      loaded += value.byteLength;
+      if (loaded >= nextReportAt) {
+        const detail = Number.isFinite(total)
+          ? `${formatBytes(loaded)} / ${formatBytes(total)}`
+          : `${formatBytes(loaded)} downloaded`;
+        emitProgress(onProgress, 'Downloading archive payload', detail);
+        nextReportAt += RAW_PROGRESS_CHUNK_BYTES;
+      }
+    }
+
+    const detail = Number.isFinite(total)
+      ? `${formatBytes(loaded)} / ${formatBytes(total)}`
+      : `${formatBytes(loaded)} downloaded`;
+    emitProgress(onProgress, 'Downloading archive payload', detail);
+    return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString('utf8');
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function loadGistFileContent(gistFile, token, fetchImpl = fetch, onProgress) {
+  if (gistFile?.truncated && gistFile?.raw_url) {
+    return downloadRawTextWithProgress(gistFile.raw_url, token, fetchImpl, onProgress);
   }
 
   return gistFile?.content ?? null;
@@ -170,6 +228,7 @@ export async function downloadPackageFromGist({ gistId, remoteKey, fetchImpl, en
     throw new Error(`Unable to resolve a GitHub gist for remote '${remoteKey ?? 'unknown'}'.`);
   }
 
+  emitProgress(onProgress, 'Downloading Gist metadata', resolvedGistId);
   const response = await githubFetch(`https://api.github.com/gists/${resolvedGistId}`, {
     headers: {
       Authorization: `Bearer ${token}`
@@ -178,7 +237,7 @@ export async function downloadPackageFromGist({ gistId, remoteKey, fetchImpl, en
   const gist = await response.json();
   const gistFile = gist?.files?.[DEFAULT_GIST_FILE_NAME];
   emitProgress(onProgress, 'Downloading archive payload', gistFile?.truncated ? 'raw_url' : 'content');
-  const base64Content = await loadGistFileContent(gistFile, token, fetchImpl);
+  const base64Content = await loadGistFileContent(gistFile, token, fetchImpl, onProgress);
   if (!base64Content) {
     throw new Error(`Gist ${resolvedGistId} does not contain ${DEFAULT_GIST_FILE_NAME}.`);
   }
@@ -199,5 +258,3 @@ export async function downloadPackageFromGist({ gistId, remoteKey, fetchImpl, en
     }
   };
 }
-
-
