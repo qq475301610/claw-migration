@@ -1,4 +1,4 @@
-import { GITHUB_TOKEN_ENV_VARS } from './constants.js';
+﻿import { GITHUB_TOKEN_ENV_VARS } from './constants.js';
 import { downloadPackageFromGist, upsertPackageToGist } from './gist.js';
 
 function resolveGitHubToken(remoteConfig, env = process.env) {
@@ -52,7 +52,8 @@ function createGithubProvider(remoteConfig, dependencies = {}) {
         remoteKey: locator.remoteKey,
         configuredToken: locator.token,
         fetchImpl: dependencies.fetchImpl,
-        env: dependencies.env
+        env: dependencies.env,
+        onProgress: context.onProgress
       });
     },
     async previewPull(context) {
@@ -76,7 +77,8 @@ function createGithubProvider(remoteConfig, dependencies = {}) {
         remoteKey: locator.remoteKey,
         configuredToken: locator.token,
         fetchImpl: dependencies.fetchImpl,
-        env: dependencies.env
+        env: dependencies.env,
+        onProgress: context.onProgress
       });
     }
   };
@@ -128,3 +130,4 @@ export function createProvider(remoteConfig, dependencies = {}) {
       };
   }
 }
+
