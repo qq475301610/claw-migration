@@ -165,13 +165,14 @@ test('preview push reports remote, bindings, and gateway actions', async () => {
   assert.equal(preview.remoteName, 'primary');
   assert.equal(preview.provider, 'github');
   assert.equal(preview.willDisableBindings, true);
-  assert.equal(preview.willRestartGateway, true);
+  assert.equal(preview.willRestartGateway, false);
+  assert.match(preview.warnings.join(' '), /manual gateway restart is disabled/i);
   assert.equal(preview.bindings.length, 1);
   await preview.cleanup?.();
   await fs.rm(rootDir, { recursive: true, force: true });
 });
 
-test('push uploads package, disables only target agent bindings, and records gist id', async () => {
+test('push uploads package, disables only target agent bindings, records gist id, and does not manually restart gateway', async () => {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claw-migration-push-'));
   const state = await createOpenClawState(rootDir, { includeAgent: true });
   const restartCalls = [];
@@ -186,12 +187,14 @@ test('push uploads package, disables only target agent bindings, and records gis
     }),
     restartGateway: async () => {
       restartCalls.push('restart');
-    }
+    },
+    isGatewayRunning: async () => false
   });
 
   assert.equal(result.ok, true);
   assert.equal(result.disabledBindings.length, 1);
-  assert.equal(restartCalls.length, 1);
+  assert.equal(restartCalls.length, 0);
+  assert.match(result.warnings.join(' '), /manual gateway restart is disabled/i);
 
   const config = JSON.parse(await fs.readFile(path.join(state.openClawDir, 'openclaw.json'), 'utf8'));
   assert.equal(config.bindings.some((binding) => binding.agentId === 'main'), false);
@@ -237,7 +240,7 @@ test('preview pull reports dependency blockers from remote package', async () =>
   await fs.rm(rootDir, { recursive: true, force: true });
 });
 
-test('pull imports package, enables bindings, clears disabled snapshot, and restarts gateway', async () => {
+test('pull imports package, enables bindings, clears disabled snapshot, and does not manually restart gateway', async () => {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claw-migration-pull-'));
   const sourceRoot = path.join(rootDir, 'source');
   const targetRoot = path.join(rootDir, 'target');
@@ -269,12 +272,14 @@ test('pull imports package, enables bindings, clears disabled snapshot, and rest
     restartGateway: async () => {
       restartCalls.push('restart');
     },
+    isGatewayRunning: async () => false,
     confirm: true,
     skipReindex: true
   });
 
   assert.equal(result.ok, true);
-  assert.equal(restartCalls.length, 1);
+  assert.equal(restartCalls.length, 0);
+  assert.match(result.warnings.join(' '), /manual gateway restart is disabled/i);
   assert.equal(result.enabledBindings.length, 1);
 
   const config = JSON.parse(await fs.readFile(path.join(targetState.openClawDir, 'openclaw.json'), 'utf8'));
@@ -286,3 +291,59 @@ test('pull imports package, enables bindings, clears disabled snapshot, and rest
 
 
 
+
+
+test('pull restores non-qqbot channel enabled state from channel snapshots', async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claw-migration-pull-dingtalk-'));
+  const sourceRoot = path.join(rootDir, 'source');
+  const targetRoot = path.join(rootDir, 'target');
+  const sourceState = await createOpenClawState(sourceRoot, { includeAgent: true, includeSupportEntries: true });
+  const targetState = await createOpenClawState(targetRoot, { includeAgent: false, includeSupportEntries: true });
+
+  const sourceConfigPath = path.join(sourceState.openClawDir, 'openclaw.json');
+  const sourceConfig = JSON.parse(await fs.readFile(sourceConfigPath, 'utf8'));
+  sourceConfig.bindings = [
+    ...sourceConfig.bindings,
+    { agentId: 'main', match: { channel: 'dingtalk', accountId: 'default' } }
+  ];
+  sourceConfig.channels.dingtalk = { enabled: true, clientId: 'ding-id', clientSecret: 'ding-secret' };
+  await writeJson(sourceConfigPath, sourceConfig);
+
+  const zipPath = path.join(rootDir, 'migration.zip');
+  await exportMigrationPackage({
+    openClawDir: sourceState.openClawDir,
+    agentId: 'main',
+    to: 'local',
+    outputPath: zipPath
+  });
+
+  const targetConfigPath = path.join(targetState.openClawDir, 'openclaw.json');
+  const targetConfig = JSON.parse(await fs.readFile(targetConfigPath, 'utf8'));
+  targetConfig.plugins.entries['claw-migration'].config.remotes.primary.settings.gistId = 'gist-123';
+  targetConfig.plugins.entries['claw-migration'].config.state.disabledBindingsByAgent.main = [
+    { agentId: 'main', match: { channel: 'dingtalk', accountId: 'default' } }
+  ];
+  targetConfig.plugins.entries['claw-migration'].config.state.disabledChannelAccountsByAgent ??= {};
+  targetConfig.plugins.entries['claw-migration'].config.state.disabledChannelAccountsByAgent.main = [
+    { channel: 'dingtalk', scope: 'root', accountId: 'default', enabled: false }
+  ];
+  targetConfig.channels.dingtalk = { enabled: false, clientId: 'ding-id', clientSecret: 'ding-secret' };
+  await writeJson(targetConfigPath, targetConfig);
+
+  const result = await pullAgentMigration({
+    openClawDir: targetState.openClawDir,
+    agentId: 'main',
+    env: {},
+    fetchImpl: await makeRemoteFetchForZip(zipPath),
+    restartGateway: async () => {},
+    confirm: true,
+    skipReindex: true
+  });
+
+  assert.equal(result.ok, true);
+  const config = JSON.parse(await fs.readFile(path.join(targetState.openClawDir, 'openclaw.json'), 'utf8'));
+  assert.equal(config.channels.dingtalk.enabled, false);
+  assert.equal(config.plugins.entries['claw-migration'].config.state.disabledChannelAccountsByAgent.main, undefined);
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+});

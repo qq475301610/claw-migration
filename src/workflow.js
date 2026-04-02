@@ -2,8 +2,7 @@
 import { disableAgentBindings, enableAgentBindings } from './binding-state.js';
 import { createMigrationArchive } from './export-service.js';
 import { formatPreview, formatVerify } from './format.js';
-import { restartGateway } from './gateway.js';
-import { importMigrationPackage } from './import-service.js';
+import { importMigrationPackage, importMigrationPackageFromPreview } from './import-service.js';
 import { backupPath, restoreBackup } from './import-support.js';
 import { ensurePluginConfigShape, getAgentBindings, loadOpenClawConfigForPlugin, resolveRemoteConfig } from './plugin-config.js';
 import { createProvider } from './providers.js';
@@ -19,16 +18,6 @@ function summarizeBindingTargets(bindings) {
   }));
 }
 
-function describeCommandFailure(error) {
-  const parts = [error.message];
-  if (error.stderr) {
-    parts.push(`[stderr]\n${String(error.stderr).trimEnd()}`);
-  }
-  if (error.stdout) {
-    parts.push(`[stdout]\n${String(error.stdout).trimEnd()}`);
-  }
-  return parts.join('\n');
-}
 
 async function buildProviderContext(options) {
   emitProgress(options, 'Loading plugin config', options.openClawDir ?? '~/.openclaw');
@@ -76,6 +65,9 @@ export async function previewPush(options) {
     const previewResult = await context.provider.previewPush({ manifest, options, remoteConfig: context.remoteConfig });
     blockers.push(...(previewResult.blockers ?? []));
     warnings.push(...(previewResult.notes ?? []));
+    if (context.pluginConfig.restartGatewayOnPush) {
+      warnings.push('Manual gateway restart is disabled; if OpenClaw gateway is already running, rely on its config watcher to reload changes.');
+    }
   }
 
   return {
@@ -87,7 +79,7 @@ export async function previewPush(options) {
     provider: context.remoteConfig?.provider ?? null,
     bindings: summarizeBindingTargets(bindings),
     willDisableBindings: context.pluginConfig.switchBindingsOnPush,
-    willRestartGateway: context.pluginConfig.restartGatewayOnPush,
+    willRestartGateway: false,
     blockers,
     warnings,
     cleanup: archiveCleanup
@@ -126,11 +118,12 @@ export async function pushAgentMigration(options) {
       let configBackup = null;
       const warnings = [];
       const configPath = path.join(context.openClawDir, 'openclaw.json');
+      let nextConfig = null;
       try {
         if (context.pluginConfig.switchBindingsOnPush || remoteResult.id) {
           configBackup = await backupPath(configPath, `push-bak-${Date.now()}`);
           const currentConfig = await readJson(configPath);
-          let nextConfig = currentConfig;
+          nextConfig = currentConfig;
 
           if (context.pluginConfig.switchBindingsOnPush) {
             const disabled = disableAgentBindings(nextConfig, options.agentId);
@@ -153,17 +146,9 @@ export async function pushAgentMigration(options) {
 
         await writeJson(configPath, nextConfig);
         }
-
-        let restartedGateway = false;
+        const restartedGateway = false;
         if (context.pluginConfig.restartGatewayOnPush) {
-          try {
-            emitProgress(options, 'Restarting gateway', 'push');
-            emitProgress(options, 'Restarting gateway', 'pull');
-            await (options.restartGateway ?? restartGateway)({ runner: options.commandRunner });
-            restartedGateway = true;
-          } catch (error) {
-            warnings.push(`Gateway restart reported an error after push, but migration changes were kept.\n${describeCommandFailure(error)}`);
-          }
+          warnings.push('Manual gateway restart is disabled after push; if OpenClaw gateway is already running, rely on its config watcher to reload changes.');
         }
 
         return {
@@ -201,11 +186,15 @@ export async function previewPull(options) {
   let sourceCleanup = async () => {};
   let packageCleanup = async () => {};
   let importPreview = null;
+  let remotePackageId = null;
 
   if (context.provider) {
     const providerPreview = await context.provider.previewPull({ options, remoteConfig: context.remoteConfig, remoteName: context.remoteName });
     blockers.push(...(providerPreview.blockers ?? []));
     warnings.push(...(providerPreview.notes ?? []));
+    if (context.pluginConfig.restartGatewayOnPull) {
+      warnings.push('Manual gateway restart is disabled; if OpenClaw gateway is already running, rely on its config watcher to reload changes.');
+    }
   }
 
   if (blockers.length === 0) {
@@ -236,9 +225,10 @@ export async function previewPull(options) {
     provider: context.remoteConfig?.provider ?? null,
     importPreview,
     willEnableBindings: context.pluginConfig.switchBindingsOnPull,
-    willRestartGateway: context.pluginConfig.restartGatewayOnPull,
+    willRestartGateway: false,
     blockers,
     warnings,
+    remotePackageId,
     sourceCleanup,
     packageCleanup
   };
@@ -260,18 +250,16 @@ export async function pullAgentMigration(options) {
     }
 
     const context = await buildProviderContext(options);
-    emitProgress(options, 'Pulling package from remote', context.remoteName);
-    const remotePackage = await context.provider.pullPackage({ remoteConfig: context.remoteConfig, remoteName: context.remoteName, onProgress: options.onProgress });
-    try {
-      emitProgress(options, 'Applying import', options.agentId);
-      const importResult = await importMigrationPackage({
-        from: 'local',
-        inputPath: remotePackage.packagePath,
-        agentId: options.agentId,
-        openClawDir: context.openClawDir,
-        confirm: true,
-        skipReindex: options.skipReindex
-      });
+    if (!preview.importPreview) {
+      throw new Error('Pull preview did not produce an import preview.');
+    }
+    emitProgress(options, 'Applying import', options.agentId);
+    const importResult = await importMigrationPackageFromPreview(preview.importPreview, {
+      openClawDir: context.openClawDir,
+      confirm: true,
+      skipReindex: options.skipReindex,
+      onProgress: options.onProgress
+    });
 
       const configPath = path.join(context.openClawDir, 'openclaw.json');
       const configBackup = await backupPath(configPath, `pull-bak-${Date.now()}`);
@@ -290,25 +278,17 @@ export async function pullAgentMigration(options) {
         currentPluginConfig.state.remotes[context.remoteName] = {
           lastPullAt: new Date().toISOString(),
           lastPackage: {
-            gistId: remotePackage.gistId ?? context.remoteConfig?.settings?.gistId ?? null
+            gistId: preview.remotePackageId ?? context.remoteConfig?.settings?.gistId ?? null
           }
         };
-        if (context.remoteConfig?.provider === 'github' && remotePackage.gistId) {
+        if (context.remoteConfig?.provider === 'github' && preview.remotePackageId) {
           currentPluginConfig.remotes[context.remoteName].settings ??= {};
-          currentPluginConfig.remotes[context.remoteName].settings.gistId = remotePackage.gistId;
+          currentPluginConfig.remotes[context.remoteName].settings.gistId = preview.remotePackageId;
         }
         await writeJson(configPath, nextConfig);
-
-        let restartedGateway = false;
+        const restartedGateway = false;
         if (context.pluginConfig.restartGatewayOnPull) {
-          try {
-            emitProgress(options, 'Restarting gateway', 'push');
-            emitProgress(options, 'Restarting gateway', 'pull');
-            await (options.restartGateway ?? restartGateway)({ runner: options.commandRunner });
-            restartedGateway = true;
-          } catch (error) {
-            warnings.push(`Gateway restart reported an error after pull, but imported changes were kept.\n${describeCommandFailure(error)}`);
-          }
+          warnings.push('Manual gateway restart is disabled after pull; if OpenClaw gateway is already running, rely on its config watcher to reload changes.');
         }
 
         return {
@@ -318,7 +298,7 @@ export async function pullAgentMigration(options) {
           remote: {
             name: context.remoteName,
             provider: context.remoteConfig.provider,
-            id: remotePackage.gistId ?? context.remoteConfig?.settings?.gistId ?? null
+            id: preview.remotePackageId ?? context.remoteConfig?.settings?.gistId ?? null
           },
           importResult,
           enabledBindings: summarizeBindingTargets(enabledBindings),
@@ -331,9 +311,6 @@ export async function pullAgentMigration(options) {
         }
         throw error;
       }
-    } finally {
-      await remotePackage.cleanup?.();
-    }
   } finally {
     await preview.sourceCleanup?.();
     await preview.packageCleanup?.();
@@ -362,6 +339,7 @@ export async function verifyMigration(options) {
 
   emitProgress(options, 'Pulling package from remote', context.remoteName);
     const remotePackage = await context.provider.pullPackage({ remoteConfig: context.remoteConfig, remoteName: context.remoteName, onProgress: options.onProgress });
+    remotePackageId = remotePackage.gistId ?? null;
   try {
     return verifyMigrationPackage({
       from: 'local',
@@ -403,6 +381,9 @@ export function formatActionPreview(preview) {
 export function formatVerification(result) {
   return formatVerify(result);
 }
+
+
+
 
 
 

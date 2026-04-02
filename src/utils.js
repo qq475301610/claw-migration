@@ -4,6 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
+const OPENCLAW_MIGRATION_TEMP_PREFIXES = [
+  'openclaw-migration-',
+  'openclaw-migration-output-',
+  'openclaw-migration-gist-',
+  'openclaw-migration-extract-'
+];
+
 export function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -87,7 +94,8 @@ export async function execFile(command, args, options = {}) {
     const child = spawn(normalized.command, normalized.args, {
       cwd: options.cwd,
       env: options.env ?? process.env,
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: options.windowsHide ?? false
     });
 
     let stdout = '';
@@ -117,6 +125,28 @@ export async function execFile(command, args, options = {}) {
 
 export async function makeTempDir(prefix) {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix));
+}
+
+export async function cleanupStaleMigrationTempDirs(options = {}) {
+  const tempRoot = options.tempRoot ?? os.tmpdir();
+  const prefixes = options.prefixes ?? OPENCLAW_MIGRATION_TEMP_PREFIXES;
+  const entries = await fs.readdir(tempRoot, { withFileTypes: true });
+  const removed = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    if (!prefixes.some((prefix) => entry.name.startsWith(prefix))) {
+      continue;
+    }
+
+    const fullPath = path.join(tempRoot, entry.name);
+    await fs.rm(fullPath, { recursive: true, force: true });
+    removed.push(fullPath);
+  }
+
+  return removed;
 }
 
 export function uniq(values) {
@@ -189,3 +219,4 @@ export async function promptYesNo(message) {
 export function relativeFrom(rootDir, fullPath) {
   return toPosixPath(path.relative(rootDir, fullPath));
 }
+

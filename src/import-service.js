@@ -4,7 +4,7 @@ import { mergeOpenClawConfig } from './merge.js';
 import { findAgent, resolveOpenClawDir } from './openclaw-state.js';
 import { previewMigrationImport } from './preview-service.js';
 import { backupPath, copyTree, rebuildMemoryIndex, restoreBackup } from './import-support.js';
-import { pathExists, readJson, removeIfExists, writeJson } from './utils.js';
+import { pathExists, readJson, writeJson } from './utils.js';
 import { emitProgress } from './progress.js';
 
 function minimalTargetConfig(openClawDir) {
@@ -27,9 +27,7 @@ function minimalTargetConfig(openClawDir) {
   };
 }
 
-export async function importMigrationPackage(options) {
-  emitProgress(options, 'Previewing import', options.agentId);
-  const preview = await previewMigrationImport(options);
+async function applyImportPreview(preview, options = {}) {
   if (preview.blockers.length > 0) {
     const error = new Error(`Import blocked:\n- ${preview.blockers.join('\n- ')}`);
     error.preview = preview;
@@ -44,6 +42,7 @@ export async function importMigrationPackage(options) {
   const openClawDir = resolveOpenClawDir({ openClawDir: options.openClawDir });
   const configPath = path.join(openClawDir, 'openclaw.json');
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  emitProgress(options, 'Creating backups', configPath);
   const configBackup = await backupPath(configPath, `migration-bak-${timestamp}`);
   let workspaceBackup = null;
 
@@ -51,7 +50,7 @@ export async function importMigrationPackage(options) {
     emitProgress(options, 'Loading package config', preview.extractedDir);
     const sourceConfig = await readJson(path.join(preview.extractedDir, 'openclaw.json'));
     const targetConfig = (await pathExists(configPath)) ? await readJson(configPath) : minimalTargetConfig(openClawDir);
-    emitProgress(options, 'Merging openclaw.json', options.agentId);
+    emitProgress(options, 'Merging openclaw.json', preview.agentId);
     const mergedConfig = mergeOpenClawConfig({
       sourceConfig,
       targetConfig,
@@ -101,9 +100,20 @@ export async function importMigrationPackage(options) {
       }
     }
     throw error;
+  }
+}
+
+export async function importMigrationPackageFromPreview(preview, options) {
+  try {
+    return await applyImportPreview(preview, options);
   } finally {
     await preview.sourceCleanup?.();
     await preview.packageCleanup?.();
   }
 }
 
+export async function importMigrationPackage(options) {
+  emitProgress(options, 'Previewing import', options.agentId);
+  const preview = await previewMigrationImport(options);
+  return importMigrationPackageFromPreview(preview, options);
+}

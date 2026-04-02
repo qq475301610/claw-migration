@@ -10,7 +10,7 @@ import {
   runMigrationSetup,
   verifyMigration
 } from '../src/index.js';
-import { promptYesNo } from '../src/utils.js';
+import { cleanupStaleMigrationTempDirs, promptYesNo } from '../src/utils.js';
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
@@ -53,6 +53,7 @@ function commandOptions(args) {
 }
 
 async function main() {
+  await cleanupStaleMigrationTempDirs();
   const args = parseArgs(process.argv.slice(2));
   const command = args._[0];
   const subcommand = args._[1];
