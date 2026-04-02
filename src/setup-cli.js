@@ -1,7 +1,14 @@
-﻿import { stdin as input, stdout as output } from 'node:process';
+﻿import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { stdin as input, stdout as output } from 'node:process';
 import { createInterface } from 'node:readline/promises';
 import { DEFAULT_REMOTE_NAME, ensurePluginConfigShape, loadOpenClawConfigForPlugin } from './plugin-config.js';
-import { writeJson } from './utils.js';
+import { resolveOpenClawDir } from './openclaw-state.js';
+import { pathExists, replaceDirectory, writeJson } from './utils.js';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const bundledSkillDir = path.join(repoRoot, 'skills', 'claw-migration');
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -54,6 +61,85 @@ async function resolveSetupTarget({ config, runtime, openClawDir }) {
   };
 }
 
+export async function getSkillInstallStatus({ openClawDir } = {}) {
+  const resolvedOpenClawDir = resolveOpenClawDir({ openClawDir });
+  const sourceSkillPath = path.join(bundledSkillDir, 'SKILL.md');
+  const sharedSkillDir = path.join(resolvedOpenClawDir, 'skills', 'claw-migration');
+  const sharedSkillPath = path.join(sharedSkillDir, 'SKILL.md');
+
+  return {
+    openClawDir: resolvedOpenClawDir,
+    sourceDir: bundledSkillDir,
+    sourceSkillPath,
+    sourceExists: await pathExists(sourceSkillPath),
+    sharedDir: sharedSkillDir,
+    sharedSkillPath,
+    sharedExists: await pathExists(sharedSkillPath)
+  };
+}
+
+export async function installMigrationSkill({ openClawDir, logger } = {}) {
+  const status = await getSkillInstallStatus({ openClawDir });
+  if (!status.sourceExists) {
+    throw new Error(`Bundled skill not found: ${status.sourceSkillPath}`);
+  }
+
+  const replaced = await pathExists(status.sharedDir);
+  await replaceDirectory(status.sourceDir, status.sharedDir);
+
+  const lines = [
+    'Claw Migration skill install',
+    `Skill: claw-migration`,
+    `Source: ${status.sourceDir}`,
+    `Target: ${status.sharedDir}`,
+    `Mode: ${replaced ? 'updated existing shared copy' : 'installed new shared copy'}`,
+    'Hint: start a new session if it does not appear immediately in <available_skills>.'
+  ];
+  const outputText = lines.join('\n');
+
+  logger?.info?.(outputText);
+  return {
+    ok: true,
+    skill: 'claw-migration',
+    sourceDir: status.sourceDir,
+    targetDir: status.sharedDir,
+    replaced,
+    lines,
+    outputText
+  };
+}
+
+export async function runMigrationDoctor({ openClawDir, logger } = {}) {
+  const status = await getSkillInstallStatus({ openClawDir });
+  if (!status.sourceExists) {
+    throw new Error(`Bundled skill not found: ${status.sourceSkillPath}`);
+  }
+
+  const lines = [
+    'Claw Migration doctor',
+    `OpenClaw dir: ${status.openClawDir}`,
+    `Bundled skill: ${status.sourceSkillPath}`,
+    `Shared skill: ${status.sharedSkillPath}`
+  ];
+
+  if (status.sharedExists) {
+    lines.push('Status: shared skill is installed.');
+  } else {
+    lines.push('Status: bundled skill exists, but shared skill is not installed.');
+    lines.push('Hint: normal environments often expose bundled plugin skills automatically.');
+    lines.push('Hint: if a new session does not show the skill, run: claw-migration install-skill');
+  }
+
+  const outputText = lines.join('\n');
+  logger?.info?.(outputText);
+  return {
+    ok: true,
+    ...status,
+    lines,
+    outputText
+  };
+}
+
 export async function runMigrationSetup({ config, runtime, logger, openClawDir } = {}) {
   const target = await resolveSetupTarget({ config, runtime, openClawDir });
   const nextConfig = target.config;
@@ -100,6 +186,7 @@ export async function runMigrationSetup({ config, runtime, logger, openClawDir }
 
     await target.save(nextConfig);
     logger?.info?.(`Saved Claw Migration config to plugins.entries.claw-migration.config (defaultRemote=${remoteName}).`);
+    logger?.info?.('If a new session does not show the skill, run: claw-migration install-skill');
     return true;
   } finally {
     rl.close();
@@ -130,6 +217,7 @@ export function registerMigrationCli(api = {}) {
               'Plugin defaults are seeded into plugins.entries.claw-migration.config automatically.',
               'If this OpenClaw build exposes plugin CLI injection, you can run: openclaw migration setup',
               'Fallback that always works: claw-migration setup',
+              'If a new session does not show the skill, run: claw-migration install-skill',
               'Then use: claw-migration preview push --agent <id>'
             ].join('\n')
           );
@@ -144,6 +232,20 @@ export function registerMigrationCli(api = {}) {
             runtime: api.runtime,
             logger
           });
+        });
+
+      root
+        .command('install-skill')
+        .description('Install the claw-migration skill into ~/.openclaw/skills')
+        .action(async () => {
+          await installMigrationSkill({ logger });
+        });
+
+      root
+        .command('doctor')
+        .description('Check whether the bundled and shared claw-migration skills are available')
+        .action(async () => {
+          await runMigrationDoctor({ logger });
         });
     },
     { commands: ['migration'] }

@@ -12,7 +12,7 @@ import {
 } from './workflow.js';
 import { formatPreview, formatVerify } from './format.js';
 import { seedPluginConfigFile } from './plugin-config.js';
-import { registerMigrationCli, runMigrationSetup } from './setup-cli.js';
+import { installMigrationSkill, registerMigrationCli, runMigrationDoctor, runMigrationSetup } from './setup-cli.js';
 
 export async function register(api = {}) {
   try {
@@ -39,7 +39,9 @@ export {
   formatVerification,
   formatPreview,
   formatVerify,
-  runMigrationSetup
+  runMigrationSetup,
+  installMigrationSkill,
+  runMigrationDoctor
 };
 
 export default {

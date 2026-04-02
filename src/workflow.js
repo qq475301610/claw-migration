@@ -200,6 +200,7 @@ export async function previewPull(options) {
   if (blockers.length === 0) {
     emitProgress(options, 'Pulling package from remote', context.remoteName);
     const remotePackage = await context.provider.pullPackage({ remoteConfig: context.remoteConfig, remoteName: context.remoteName, onProgress: options.onProgress });
+    remotePackageId = remotePackage.gistId ?? null;
     sourceCleanup = remotePackage.cleanup ?? sourceCleanup;
     emitProgress(options, 'Previewing imported package', options.agentId);
     importPreview = await previewMigrationImport({
@@ -338,8 +339,7 @@ export async function verifyMigration(options) {
   }
 
   emitProgress(options, 'Pulling package from remote', context.remoteName);
-    const remotePackage = await context.provider.pullPackage({ remoteConfig: context.remoteConfig, remoteName: context.remoteName, onProgress: options.onProgress });
-    remotePackageId = remotePackage.gistId ?? null;
+  const remotePackage = await context.provider.pullPackage({ remoteConfig: context.remoteConfig, remoteName: context.remoteName, onProgress: options.onProgress });
   try {
     return verifyMigrationPackage({
       from: 'local',

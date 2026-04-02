@@ -71,6 +71,7 @@ Recommended setup flow:
 
 ```bash
 claw-migration setup
+claw-migration doctor
 ```
 
 This command will guide you through:
@@ -79,6 +80,8 @@ This command will guide you through:
 - entering your GitHub token directly into `openclaw.json`
 - deciding whether to include transcripts
 - deciding whether push/pull should switch bindings
+
+After setup, `claw-migration doctor` checks whether the bundled skill is present and whether a shared copy already exists under `~/.openclaw/skills/claw-migration`.
 
 ### 5. Choose how you want to run the CLI
 
@@ -174,6 +177,8 @@ If you did not run `npm link`, replace `claw-migration` below with `node ./bin/c
 ```bash
 openclaw plugins install -l .
 claw-migration setup
+claw-migration doctor
+claw-migration install-skill   # run this only if a new session still does not show the skill
 claw-migration preview push --agent main
 claw-migration push --agent main
 ```
@@ -191,6 +196,7 @@ Before `pull`, make sure the target device has:
 - the plugin installed with `openclaw plugins install -l .`
 - the same `remoteKey` configured through `claw-migration setup`
 - a GitHub token configured in `openclaw.json` or available via environment variable
+- if a new session still does not show the skill, install the shared fallback with `claw-migration install-skill`
 
 Then run:
 
@@ -212,6 +218,8 @@ Available commands:
 
 ```bash
 claw-migration setup
+claw-migration doctor [--openclaw-dir <path>]
+claw-migration install-skill [--openclaw-dir <path>]
 claw-migration preview push --agent <id> [--remote <name>] [--openclaw-dir <path>] [--notes <text>] [--quiet]
 claw-migration push --agent <id> [--remote <name>] [--openclaw-dir <path>] [--notes <text>] [--quiet]
 claw-migration preview pull --agent <id> [--remote <name>] [--openclaw-dir <path>] [--quiet]
@@ -231,6 +239,31 @@ What it does:
 
 Common parameter:
 - `--openclaw-dir <path>`: use a different OpenClaw state directory instead of `~/.openclaw`
+
+### doctor
+
+`claw-migration doctor` checks whether the bundled skill exists and whether a shared install already exists under `~/.openclaw/skills/claw-migration`.
+
+What it does:
+- verifies the bundled `skills/claw-migration/SKILL.md` exists
+- checks for a shared copy in `~/.openclaw/skills/claw-migration`
+- tells you whether you likely need the fallback install command
+
+Parameters:
+- `--openclaw-dir <path>`: optional; use a different OpenClaw state directory
+
+### install-skill
+
+`claw-migration install-skill` copies the bundled skill into `~/.openclaw/skills/claw-migration`.
+
+What it does:
+- copies only the `claw-migration` skill
+- overwrites an existing shared copy when present
+- prints source path, target path, and whether an existing copy was updated
+- recommends opening a new session if the skill does not appear immediately
+
+Parameters:
+- `--openclaw-dir <path>`: optional; use a different OpenClaw state directory
 
 ### preview push
 
@@ -349,6 +382,18 @@ When a supported channel account is linked to the migrated agent, `push` can mar
 ## OpenClaw Skill Usage
 
 The bundled skill lives at [skills/claw-migration/SKILL.md](./skills/claw-migration/SKILL.md).
+
+Skill lookup precedence follows the OpenClaw docs:
+- `<workspace>/skills`
+- `<workspace>/.agents/skills`
+- `~/.agents/skills`
+- `~/.openclaw/skills`
+- bundled skills
+
+Recommended flow:
+1. `openclaw plugins install -l .`
+2. `claw-migration setup`
+3. If a new session still does not show the skill, run `claw-migration install-skill`
 
 Once the plugin is installed, an Agent can use that skill to:
 1. read `plugins.entries.claw-migration.config`

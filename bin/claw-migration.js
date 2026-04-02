@@ -7,7 +7,9 @@ import {
   previewPush,
   pullAgentMigration,
   pushAgentMigration,
+  runMigrationDoctor,
   runMigrationSetup,
+  installMigrationSkill,
   verifyMigration
 } from '../src/index.js';
 import { cleanupStaleMigrationTempDirs, promptYesNo } from '../src/utils.js';
@@ -70,6 +72,24 @@ async function main() {
     return;
   }
 
+  if (command === 'install-skill') {
+    const result = await installMigrationSkill({
+      openClawDir: options.openClawDir,
+      logger: null
+    });
+    console.log(result.outputText ?? JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (command === 'doctor') {
+    const result = await runMigrationDoctor({
+      openClawDir: options.openClawDir,
+      logger: null
+    });
+    console.log(result.outputText ?? JSON.stringify(result, null, 2));
+    return;
+  }
+
   if (command === 'push') {
     const result = await pushAgentMigration(options);
     console.log(JSON.stringify(result, null, 2));
@@ -111,7 +131,7 @@ async function main() {
     return;
   }
 
-  console.error('Usage: claw-migration <setup|push|pull|preview push|preview pull|verify> [options]');
+  console.error('Usage: claw-migration <setup|install-skill|doctor|push|pull|preview push|preview pull|verify> [options]');
   process.exitCode = 1;
 }
 

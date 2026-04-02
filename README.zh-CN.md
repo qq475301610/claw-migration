@@ -71,6 +71,7 @@ openclaw plugins list
 
 ```bash
 claw-migration setup
+claw-migration doctor
 ```
 
 这个命令会引导你填写：
@@ -79,6 +80,8 @@ claw-migration setup
 - GitHub token，并直接写入 `openclaw.json`
 - 是否带 transcripts
 - push/pull 后是否切换 bindings
+
+执行完后，`claw-migration doctor` 会检查内置 skill 是否存在，以及 `~/.openclaw/skills/claw-migration` 下是否已经有共享安装。
 
 ### 5. 选择 CLI 的运行方式
 
@@ -174,6 +177,8 @@ GitHub 官方说明：
 ```bash
 openclaw plugins install -l .
 claw-migration setup
+claw-migration doctor
+claw-migration install-skill   # 只有在新会话里仍然看不到 skill 时才需要
 claw-migration preview push --agent main
 claw-migration push --agent main
 ```
@@ -191,6 +196,7 @@ claw-migration push --agent main
 - 已执行 `openclaw plugins install -l .`
 - 已通过 `claw-migration setup` 配好同样的 `remoteKey`
 - 已在 `openclaw.json` 里配置 GitHub token，或提供了环境变量兜底
+- 如果新会话里仍然看不到 skill，可执行 `claw-migration install-skill` 安装共享 fallback
 
 然后执行：
 
@@ -212,6 +218,8 @@ claw-migration pull --agent main --yes
 
 ```bash
 claw-migration setup
+claw-migration doctor [--openclaw-dir <path>]
+claw-migration install-skill [--openclaw-dir <path>]
 claw-migration preview push --agent <id> [--remote <name>] [--openclaw-dir <path>] [--notes <text>] [--quiet]
 claw-migration push --agent <id> [--remote <name>] [--openclaw-dir <path>] [--notes <text>] [--quiet]
 claw-migration preview pull --agent <id> [--remote <name>] [--openclaw-dir <path>] [--quiet]
@@ -231,6 +239,31 @@ claw-migration verify --agent <id> [--remote <name>] [--openclaw-dir <path>] [--
 
 常用参数：
 - `--openclaw-dir <path>`：改用其他 OpenClaw 状态目录，而不是默认的 `~/.openclaw`
+
+### doctor
+
+`claw-migration doctor` 用来检查内置 skill 是否存在，以及 `~/.openclaw/skills/claw-migration` 下是否已经安装了共享 skill。
+
+它会做什么：
+- 校验仓库内的 `skills/claw-migration/SKILL.md` 是否存在
+- 检查 `~/.openclaw/skills/claw-migration` 下是否已有共享副本
+- 告诉你当前是否建议执行 fallback 安装命令
+
+参数说明：
+- `--openclaw-dir <path>`：可选；改用其他 OpenClaw 状态目录
+
+### install-skill
+
+`claw-migration install-skill` 会把内置 skill 复制到 `~/.openclaw/skills/claw-migration`。
+
+它会做什么：
+- 只复制当前插件自己的 `claw-migration` skill
+- 如果共享目录里已有旧版本，则直接覆盖更新
+- 打印源路径、目标路径和是否发生覆盖
+- 提示你如果没有立刻看到 skill，可以新开一个会话
+
+参数说明：
+- `--openclaw-dir <path>`：可选；改用其他 OpenClaw 状态目录
 
 ### preview push
 
@@ -349,6 +382,18 @@ claw-migration verify --agent <id> [--remote <name>] [--openclaw-dir <path>] [--
 ## OpenClaw Skill 用法
 
 内置 skill 在 [skills/claw-migration/SKILL.md](./skills/claw-migration/SKILL.md)。
+
+Skill 查找优先级遵循 OpenClaw 官方文档：
+- `<workspace>/skills`
+- `<workspace>/.agents/skills`
+- `~/.agents/skills`
+- `~/.openclaw/skills`
+- bundled skills
+
+推荐顺序：
+1. `openclaw plugins install -l .`
+2. `claw-migration setup`
+3. 如果新会话里仍然看不到 skill，再执行 `claw-migration install-skill`
 
 插件安装完成后，Agent 可以通过这个 skill：
 1. 读取 `plugins.entries.claw-migration.config`

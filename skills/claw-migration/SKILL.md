@@ -42,8 +42,9 @@ claw-migration verify --agent <agentId> [--remote <name>]
 
 ## Notes
 
-- `push` uploads a complete migration package, then may disable the current agent's bindings and restart gateway.
-- `pull` downloads and imports a complete migration package, then may enable bindings and restart gateway.
+- This skill may be available either from the plugin bundle or from a shared install at `~/.openclaw/skills/claw-migration`.
+- `push` uploads a complete migration package, then may disable the current agent's bindings and linked channel account state.
+- `pull` downloads and imports a complete migration package, then may enable bindings and restore linked channel account state.
 - The plugin only switches bindings for the specified agent. It does not shut down an entire channel or account.
 - In v1, `github` is the only implemented remote provider. `webdav` config may exist but will block execution until implemented.
 

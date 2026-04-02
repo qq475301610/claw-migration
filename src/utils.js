@@ -195,6 +195,11 @@ export async function copyDirectory(sourceDir, targetDir, filter) {
   }
 }
 
+export async function replaceDirectory(sourceDir, targetDir, filter) {
+  await fs.rm(targetDir, { recursive: true, force: true });
+  await copyDirectory(sourceDir, targetDir, filter);
+}
+
 export async function removeIfExists(targetPath) {
   if (await pathExists(targetPath)) {
     await fs.rm(targetPath, { recursive: true, force: true });
