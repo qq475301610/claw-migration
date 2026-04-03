@@ -3,57 +3,95 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { downloadPackageFromGist, findGistByRemoteKey, uploadPackageToGist } from '../src/gist.js';
+import { buildReleaseTag, downloadPackageFromRelease, upsertPackageToRelease } from '../src/github-release.js';
 
 async function withTempFile() {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'gist-test-'));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'release-test-'));
   const filePath = path.join(dir, 'migration.zip');
   await fs.writeFile(filePath, Buffer.from('zip-content'));
   return { dir, filePath };
 }
 
-test('gist transport uploads and downloads base64 zip payloads', async () => {
+function releasePayload(overrides = {}) {
+  return {
+    id: 123,
+    tag_name: 'claw-migration-main-agent',
+    html_url: 'https://github.com/octo-org/migration-store/releases/tag/claw-migration-main-agent',
+    upload_url: 'https://uploads.github.com/repos/octo-org/migration-store/releases/123/assets{?name,label}',
+    assets: [
+      {
+        id: 456,
+        name: 'migration.zip',
+        browser_download_url: 'https://github.com/octo-org/migration-store/releases/download/claw-migration-main-agent/migration.zip'
+      }
+    ],
+    ...overrides
+  };
+}
+
+test('github release transport uploads and downloads zip payloads', async () => {
   const { dir, filePath } = await withTempFile();
   const requests = [];
 
-  const uploadFetch = async (url, options) => {
+  const uploadFetch = async (url, options = {}) => {
     requests.push({ url, options });
-    return {
-      ok: true,
-      json: async () => ({ id: 'gist-123', html_url: 'https://gist.github.com/example/gist-123' })
-    };
+    if (url.includes('/releases/tags/')) {
+      return { ok: false, status: 404, text: async () => 'not found' };
+    }
+    if (url.endsWith('/releases')) {
+      return { ok: true, json: async () => releasePayload({ assets: [] }) };
+    }
+    if (url.startsWith('https://uploads.github.com/')) {
+      return {
+        ok: true,
+        json: async () => ({
+          id: 456,
+          name: 'migration.zip',
+          browser_download_url: 'https://github.com/octo-org/migration-store/releases/download/claw-migration-main-agent/migration.zip'
+        })
+      };
+    }
+    throw new Error(`Unexpected upload url: ${url}`);
   };
 
-  const uploadResult = await uploadPackageToGist({
+  const uploadResult = await upsertPackageToRelease({
     zipPath: filePath,
     manifest: {
       source: { agentId: 'main' },
       createdAt: '2026-03-31T10:00:00.000Z',
       openclawVersion: '2026.3.28'
     },
+    owner: 'octo-org',
+    repo: 'migration-store',
+    remoteKey: 'main-agent',
     fetchImpl: uploadFetch,
-    env: { GITHUB_TOKEN: 'token' }
+    configuredToken: 'token'
   });
 
-  assert.equal(uploadResult.id, 'gist-123');
-  const uploadBody = JSON.parse(requests[0].options.body);
-  assert.ok(uploadBody.files['migration.zip.base64'].content.length > 0);
+  assert.equal(uploadResult.releaseId, 123);
+  assert.equal(uploadResult.assetId, 456);
+  assert.equal(uploadResult.tag, 'claw-migration-main-agent');
+  assert.equal(requests[0].url.includes('/releases/tags/claw-migration-main-agent'), true);
 
-  const downloadFetch = async () => ({
-    ok: true,
-    json: async () => ({
-      files: {
-        'migration.zip.base64': {
-          content: Buffer.from('zip-content').toString('base64')
-        }
-      }
-    })
-  });
+  const downloadFetch = async (url) => {
+    if (url.endsWith('/releases/123')) {
+      return { ok: true, json: async () => releasePayload() };
+    }
+    if (url.endsWith('/releases/assets/456')) {
+      return new Response(Buffer.from('zip-content'), {
+        status: 200,
+        headers: { 'content-length': String(Buffer.byteLength('zip-content')) }
+      });
+    }
+    throw new Error(`Unexpected download url: ${url}`);
+  };
 
-  const downloadResult = await downloadPackageFromGist({
-    gistId: 'gist-123',
+  const downloadResult = await downloadPackageFromRelease({
+    owner: 'octo-org',
+    repo: 'migration-store',
+    releaseId: 123,
     fetchImpl: downloadFetch,
-    env: { GITHUB_TOKEN: 'token' }
+    configuredToken: 'token'
   });
 
   const buffer = await fs.readFile(downloadResult.packagePath);
@@ -62,129 +100,116 @@ test('gist transport uploads and downloads base64 zip payloads', async () => {
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-test('gist transport downloads truncated base64 files through raw_url', async () => {
-  const fetchImpl = async (url) => {
-    if (url === 'https://api.github.com/gists/gist-large') {
-      return {
-        ok: true,
-        json: async () => ({
-          files: {
-            'migration.zip.base64': {
-              truncated: true,
-              raw_url: 'https://gist.githubusercontent.com/example/raw/migration.zip.base64',
-              content: 'partial'
-            }
-          }
-        })
-      };
-    }
-
-    if (url === 'https://gist.githubusercontent.com/example/raw/migration.zip.base64') {
-      return {
-        ok: true,
-        text: async () => Buffer.from('zip-content').toString('base64')
-      };
-    }
-
-    throw new Error(`Unexpected url: ${url}`);
-  };
-
-  const result = await downloadPackageFromGist({
-    gistId: 'gist-large',
-    fetchImpl,
-    env: { GITHUB_TOKEN: 'token' }
-  });
-
-  const buffer = await fs.readFile(result.packagePath);
-  assert.equal(buffer.toString('utf8'), 'zip-content');
-  await result.cleanup();
-});
-
-test('gist transport resolves an existing gist by remoteKey before upload', async () => {
+test('github release transport resolves an existing release by remoteKey before upload', async () => {
   const { dir, filePath } = await withTempFile();
   const requests = [];
 
   const fetchImpl = async (url, options = {}) => {
     requests.push({ url, options });
-    if ((options.method ?? 'GET') === 'PATCH') {
+    if (url.includes('/releases/tags/')) {
+      return { ok: true, json: async () => releasePayload({ assets: [] }) };
+    }
+    if (url.startsWith('https://uploads.github.com/')) {
       return {
         ok: true,
-        json: async () => ({ id: 'gist-remote', html_url: 'https://gist.github.com/example/gist-remote' })
+        json: async () => ({
+          id: 456,
+          name: 'migration.zip',
+          browser_download_url: 'https://github.com/octo-org/migration-store/releases/download/claw-migration-main-agent/migration.zip'
+        })
       };
     }
-
-    return {
-      ok: true,
-      json: async () => ([
-        { id: 'gist-remote', html_url: 'https://gist.github.com/example/gist-remote', description: 'OpenClaw migration:main-agent:main:2026-03-31T10:00:00.000Z:2026.3.28' }
-      ])
-    };
+    throw new Error(`Unexpected url: ${url}`);
   };
 
-  const result = await uploadPackageToGist({
+  const result = await upsertPackageToRelease({
     zipPath: filePath,
     manifest: {
       source: { agentId: 'main' },
       createdAt: '2026-03-31T10:00:00.000Z',
       openclawVersion: '2026.3.28'
     },
+    owner: 'octo-org',
+    repo: 'migration-store',
     remoteKey: 'main-agent',
     fetchImpl,
-    env: { GITHUB_TOKEN: 'token' }
+    configuredToken: 'token'
   });
 
-  assert.equal(result.id, 'gist-remote');
-  assert.equal(requests[0].url.includes('/gists?per_page=100&page=1'), true);
-  assert.equal(requests[1].url.endsWith('/gists/gist-remote'), true);
+  assert.equal(result.releaseId, 123);
+  assert.equal(requests[0].url.includes('/releases/tags/claw-migration-main-agent'), true);
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-test('gist transport can download by remoteKey without a configured gistId', async () => {
-  const fetchImpl = async (url) => {
-    if (url.includes('/gists?per_page=100&page=1')) {
+test('github release transport deletes an existing asset before re-uploading', async () => {
+  const { dir, filePath } = await withTempFile();
+  const requests = [];
+
+  const fetchImpl = async (url, options = {}) => {
+    requests.push({ url, options });
+    if (url.includes('/releases/tags/')) {
+      return { ok: true, json: async () => releasePayload() };
+    }
+    if (url.endsWith('/releases/assets/456')) {
+      return { ok: true, text: async () => '' };
+    }
+    if (url.startsWith('https://uploads.github.com/')) {
       return {
         ok: true,
-        json: async () => ([
-          { id: 'gist-remote', html_url: 'https://gist.github.com/example/gist-remote', description: 'OpenClaw migration:main-agent:main:2026-03-31T10:00:00.000Z:2026.3.28' }
-        ])
+        json: async () => ({ id: 789, name: 'migration.zip', browser_download_url: 'https://example.test/migration.zip' })
       };
     }
-
-    return {
-      ok: true,
-      json: async () => ({
-        files: {
-          'migration.zip.base64': {
-            content: Buffer.from('zip-content').toString('base64')
-          }
-        }
-      })
-    };
+    throw new Error(`Unexpected url: ${url}`);
   };
 
-  const result = await downloadPackageFromGist({
+  const result = await upsertPackageToRelease({
+    zipPath: filePath,
+    manifest: {
+      source: { agentId: 'main' },
+      createdAt: '2026-03-31T10:00:00.000Z',
+      openclawVersion: '2026.3.28'
+    },
+    owner: 'octo-org',
+    repo: 'migration-store',
     remoteKey: 'main-agent',
     fetchImpl,
-    env: { GITHUB_TOKEN: 'token' }
+    configuredToken: 'token'
   });
 
-  assert.equal(result.gistId, 'gist-remote');
+  assert.equal(result.assetId, 789);
+  assert.equal(requests.some((request) => request.url.endsWith('/releases/assets/456') && request.options.method === 'DELETE'), true);
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
+test('github release transport can download by remoteKey without a configured releaseId', async () => {
+  const fetchImpl = async (url) => {
+    if (url.includes('/releases/tags/claw-migration-main-agent')) {
+      return { ok: true, json: async () => releasePayload() };
+    }
+    if (url.endsWith('/releases/assets/456')) {
+      return new Response(Buffer.from('zip-content'), {
+        status: 200,
+        headers: { 'content-length': String(Buffer.byteLength('zip-content')) }
+      });
+    }
+    throw new Error(`Unexpected url: ${url}`);
+  };
+
+  const result = await downloadPackageFromRelease({
+    owner: 'octo-org',
+    repo: 'migration-store',
+    remoteKey: 'main-agent',
+    fetchImpl,
+    configuredToken: 'token'
+  });
+
+  assert.equal(result.releaseId, 123);
   const buffer = await fs.readFile(result.packagePath);
   assert.equal(buffer.toString('utf8'), 'zip-content');
   await result.cleanup();
 });
 
-test('gist transport exposes a lookup helper for remoteKey', async () => {
-  const result = await findGistByRemoteKey({
-    remoteKey: 'main-agent',
-    fetchImpl: async () => ({
-      ok: true,
-      json: async () => ([
-        { id: 'gist-remote', html_url: 'https://gist.github.com/example/gist-remote', description: 'OpenClaw migration:main-agent:main:2026-03-31T10:00:00.000Z:2026.3.28' }
-      ])
-    }),
-    env: { GITHUB_TOKEN: 'token' }
-  });
-
-  assert.equal(result.id, 'gist-remote');
+test('github release transport builds a stable release tag from remoteKey', () => {
+  assert.equal(buildReleaseTag('main-agent'), 'claw-migration-main-agent');
+  assert.equal(buildReleaseTag('main/agent prod'), 'claw-migration-main-agent-prod');
 });

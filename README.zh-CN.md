@@ -1,4 +1,4 @@
-﻿# Claw Migration
+# Claw Migration
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
@@ -16,7 +16,7 @@
 
 当前范围：
 - 只支持单个 agent 迁移
-- 当前只实现了 GitHub provider
+- 当前只实现了 GitHub Release Assets provider
 - WebDAV 只预留了扩展位，暂未实现
 - 迁移包是完整包，不是脱敏分享包
 - channel 状态恢复同时支持官方 OpenClaw channel 风格配置和 `openclaw-china` 插件里的 channel 配置
@@ -76,12 +76,14 @@ claw-migration doctor
 
 这个命令会引导你填写：
 - remote 名称
+- GitHub owner
+- GitHub repo
 - 稳定的 `remoteKey`
 - GitHub token，并直接写入 `openclaw.json`
 - 是否带 transcripts
 - push/pull 后是否切换 bindings
 
-执行完后，`claw-migration doctor` 会检查内置 skill 是否存在，以及 `~/.openclaw/skills/claw-migration` 下是否已经有共享安装。
+执行完后，`claw-migration doctor` 会检查内置 skill 是否存在，以及 `~/.openclaw/skills/claw-migration` 下是否已经有共享安装。如果新会话里仍然看不到 skill，可以执行 `claw-migration install-skill`。
 
 ### 5. 选择 CLI 的运行方式
 
@@ -104,6 +106,26 @@ claw-migration --help
 - `~/.openclaw/openclaw.json`
 - `plugins.entries.claw-migration.config`
 
+### GitHub 字段怎么填
+
+当 `claw-migration setup` 提示你填写 GitHub 字段时，可以这样理解：
+- `GitHub owner`：GitHub 用户名或组织名。例如 `qq475301610` 或 `my-team`。
+- `GitHub repo`：专门用来存迁移包 Release Assets 的仓库名。例如 `claw-migration-store`。
+- `GitHub token`：一个有权限在该仓库创建 Release、上传 Release Assets 的 Personal Access Token。
+
+推荐准备方式：
+1. 先决定迁移文件是放在你的个人 GitHub 账号下，还是某个组织下。
+2. 新建一个专门存迁移包的仓库，例如 `claw-migration-store`。
+3. 把账号名或组织名填到 `owner`。
+4. 把仓库名填到 `repo`。
+5. 去 `GitHub -> Settings -> Developer settings -> Personal access tokens` 创建 token，然后在 setup 时粘贴进去。
+
+推荐的仓库使用方式：
+- 最好单独建一个 private 仓库专门存迁移包
+- 除非你明确想把迁移 zip 也放到插件源码仓库里，否则不要直接复用当前源码仓库
+- 仓库不能是空仓库，至少先有一个初始提交，例如 `README.md`
+- 源设备和目标设备应配置相同的 `owner` 和 `repo`
+
 推荐的 GitHub 配置示例：
 
 ```json
@@ -118,6 +140,8 @@ claw-migration --help
             "main-agent": {
               "provider": "github",
               "settings": {
+                "owner": "your-github-user-or-org",
+                "repo": "claw-migration-store",
                 "remoteKey": "main-agent",
                 "token": "ghp_xxx"
               }
@@ -139,34 +163,63 @@ claw-migration --help
 
 重要说明：
 - `remoteKey` 是 GitHub 远程的主标识
-- `gistId` 现在更像内部缓存，push/pull 后可能被自动写回
+- `releaseId` 现在更像内部缓存，push/pull 后可能被自动写回
+- 用户真正应该关心和配置的是 `remoteKey`，而不是 `releaseId`
 - GitHub token 可以直接存到 `remotes.<name>.settings.token`
-- 环境变量依然支持，但只作为兜底，不再是主流程
+- GitHub token 现在只从 `remotes.<name>.settings.token` 读取
 
-## GitHub Token
+### `remoteKey` 和 `releaseId` 的区别
+
+这两个字段是故意分开的：
+- `remoteKey`：你自己控制的稳定标识，用来表示“这是哪一个迁移槽位”
+- `releaseId`：GitHub 返回的内部数字 ID，只作为本地缓存
+
+实际使用时：
+- 源设备和目标设备应配置相同的 `remoteKey`
+- 即使没有 `releaseId`，插件也可以通过 `remoteKey` 找到正确的 GitHub release
+- 即使 `releaseId` 变化或丢失，通常也不需要你手工修复
+
+## GitHub Token 与权限
 
 推荐方式：
 - 直接执行 `claw-migration setup`
 - 按提示粘贴 GitHub token
 - 让插件把它写入 `openclaw.json`
 
-兜底方式：
-- `OPENCLAW_GITHUB_TOKEN`
-- `GITHUB_TOKEN`
-- `GH_TOKEN`
 
-这个 token 需要具备创建和更新 private gist 的权限。
+去哪里获取 `owner`、`repo` 和 `token`：
+1. 打开准备用来存迁移文件的 GitHub 账号或组织页面。
+2. 新建一个仓库，例如 `claw-migration-store`。
+3. 把账号名或组织名作为 `owner`。
+4. 把仓库名作为 `repo`。
+5. 再进入 `Settings -> Developer settings -> Personal access tokens` 创建 token。
 
-去哪里获取 Token：
-1. 打开 GitHub。
-2. 进入 `Settings -> Developer settings -> Personal access tokens`。
-3. 任选一种方式创建：
-- classic token，并勾选 `gist` scope
-- fine-grained token，并给 `User permissions -> Gists` 写权限
+这个 token 需要满足：
+- 能访问你配置的仓库
+- 能创建 Release
+- 能上传和替换 Release Assets
+- 如果仓库是 private，权限不足时 GitHub 可能返回 `404 Not Found`
+
+推荐的 fine-grained token 配置方式：
+1. 打开 `Settings -> Developer settings -> Personal access tokens -> Fine-grained tokens`
+2. `Resource owner` 选择正确的账号或组织
+3. `Repository access` 选择目标仓库，例如 `claw-migration-store`
+4. `Repository permissions` 至少给 `Contents: Read and write`
+5. 生成 token，并粘贴到 setup
+
+如果你使用 classic token，也必须保证它对目标仓库具备足够的仓库访问权限，能够创建 Release 和上传资产。
+
+GitHub 侧常见错误：
+- 仓库还没创建
+- `owner` 对了，但 `repo` 填错了
+- 仓库是 private，但 token 不能访问它
+- 仓库是空仓库，GitHub release 至少要求仓库里有一个 commit
+- 把 `owner` 或 `repo` 写成了完整 URL，而不是名字
 
 GitHub 官方说明：
 - [Managing your personal access tokens](https://docs.github.com/github/extending-github/git-automation-with-oauth-tokens)
 - [Permissions required for fine-grained personal access tokens](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens)
+- [About releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases)
 
 ## 快速使用
 
@@ -184,18 +237,18 @@ claw-migration push --agent main
 ```
 
 `push` 成功后会发生：
-- 为对应 `remoteKey` 创建或更新 GitHub gist
+- 为对应 `remoteKey` 创建或更新 GitHub Release Asset
 - 按配置停用该 agent 的 bindings
 - 如果绑定的是受支持 channel，会把对应账号或 channel 的 `enabled` 设为 `false`
-- `gistId` 会作为缓存回写到 `openclaw.json`
+- `releaseId` 会作为缓存回写到 `openclaw.json`
 - 不会手动重启 gateway
 
 ### 目标设备
 
 执行 `pull` 之前，请确认目标设备已经完成：
 - 已执行 `openclaw plugins install -l .`
-- 已通过 `claw-migration setup` 配好同样的 `remoteKey`
-- 已在 `openclaw.json` 里配置 GitHub token，或提供了环境变量兜底
+- 已通过 `claw-migration setup` 配好相同的 `owner`、`repo` 和 `remoteKey`
+- 已在 `openclaw.json` 里配置 GitHub token
 - 如果新会话里仍然看不到 skill，可执行 `claw-migration install-skill` 安装共享 fallback
 
 然后执行：
@@ -233,7 +286,7 @@ claw-migration verify --agent <id> [--remote <name>] [--openclaw-dir <path>] [--
 
 它会做什么：
 - 在 `~/.openclaw/openclaw.json` 中创建或更新 `plugins.entries.claw-migration.config`
-- 让你选择 remote 名称和稳定的 `remoteKey`
+- 让你选择 remote 名称、GitHub owner、GitHub repo 和稳定的 `remoteKey`
 - 把 GitHub token 写入插件配置
 - 设置迁移和 gateway 的行为开关
 
@@ -289,7 +342,7 @@ claw-migration verify --agent <id> [--remote <name>] [--openclaw-dir <path>] [--
 
 它会做什么：
 - 生成迁移包
-- 根据 `remoteKey` 创建或更新对应的 GitHub gist
+- 根据 `remoteKey` 创建或更新对应的 GitHub Release Asset
 - 把最新远程包 id 回写到插件配置里
 - 按配置在源设备停用这个 agent 的 bindings
 - 如适用，停用关联 channel 的账号或根级 `enabled` 开关
@@ -307,7 +360,7 @@ claw-migration verify --agent <id> [--remote <name>] [--openclaw-dir <path>] [--
 `claw-migration preview pull --agent <id>` 会下载远程迁移包，并展示本次导入将会发生什么。
 
 它会做什么：
-- 通过 `remoteKey` 或缓存的 `gistId` 定位远程包
+- 通过 `remoteKey` 或缓存的 `releaseId` 定位远程包
 - 下载并校验迁移包
 - 检查依赖的 plugins 和 skills
 - 展示哪些配置、sessions 和 workspace 文件会被覆盖

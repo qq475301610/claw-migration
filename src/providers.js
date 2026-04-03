@@ -1,22 +1,14 @@
-﻿import { GITHUB_TOKEN_ENV_VARS } from './constants.js';
-import { downloadPackageFromGist, upsertPackageToGist } from './gist.js';
+﻿import { buildReleaseTag, downloadPackageFromRelease, upsertPackageToRelease } from './github-release.js';
 
-function resolveGitHubToken(remoteConfig, env = process.env) {
-  const configuredToken = remoteConfig.settings?.token;
-  if (configuredToken) {
-    return configuredToken;
-  }
-  for (const key of GITHUB_TOKEN_ENV_VARS) {
-    if (env[key]) {
-      return env[key];
-    }
-  }
-  return null;
+function resolveGitHubToken(remoteConfig) {
+  return remoteConfig.settings?.token ?? null;
 }
 
 function getRemoteLocator(remoteConfig, context = {}) {
   return {
-    gistId: remoteConfig.settings?.gistId ?? null,
+    owner: remoteConfig.settings?.owner ?? null,
+    repo: remoteConfig.settings?.repo ?? null,
+    releaseId: remoteConfig.settings?.releaseId ?? null,
     remoteKey: remoteConfig.settings?.remoteKey ?? context.options?.agentId ?? null,
     token: remoteConfig.settings?.token ?? null
   };
@@ -26,8 +18,14 @@ function createGithubProvider(remoteConfig, dependencies = {}) {
   return {
     async validateConfig() {
       const blockers = [];
-      if (!resolveGitHubToken(remoteConfig, dependencies.env ?? process.env)) {
-        blockers.push('GitHub provider requires remotes.<name>.settings.token or OPENCLAW_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN.');
+      if (!resolveGitHubToken(remoteConfig)) {
+        blockers.push('GitHub provider requires remotes.<name>.settings.token.');
+      }
+      if (!remoteConfig.settings?.owner) {
+        blockers.push('GitHub provider requires remotes.<name>.settings.owner.');
+      }
+      if (!remoteConfig.settings?.repo) {
+        blockers.push('GitHub provider requires remotes.<name>.settings.repo.');
       }
       return { blockers };
     },
@@ -35,24 +33,21 @@ function createGithubProvider(remoteConfig, dependencies = {}) {
       const notes = [];
       const locator = getRemoteLocator(remoteConfig, context);
       if (locator.remoteKey) {
-        notes.push(`Push will reuse or create the GitHub gist associated with remoteKey '${locator.remoteKey}'.`);
-      } else if (!locator.gistId) {
-        notes.push('Push will create a new private gist because neither settings.remoteKey nor settings.gistId is configured.');
-      } else {
-        notes.push(`Push will update the configured gistId '${locator.gistId}'.`);
+        notes.push(`Push will create or update the GitHub release tagged '${buildReleaseTag(locator.remoteKey)}' in ${locator.owner}/${locator.repo}.`);
       }
       return { notes };
     },
     async pushPackage(context) {
       const locator = getRemoteLocator(remoteConfig, context);
-      return upsertPackageToGist({
+      return upsertPackageToRelease({
         zipPath: context.zipPath,
         manifest: context.manifest,
-        gistId: locator.gistId,
+        owner: locator.owner,
+        repo: locator.repo,
+        releaseId: locator.releaseId,
         remoteKey: locator.remoteKey,
         configuredToken: locator.token,
         fetchImpl: dependencies.fetchImpl,
-        env: dependencies.env,
         onProgress: context.onProgress
       });
     },
@@ -60,24 +55,25 @@ function createGithubProvider(remoteConfig, dependencies = {}) {
       const blockers = [];
       const notes = [];
       const locator = getRemoteLocator(remoteConfig, context);
-      if (!locator.gistId && !locator.remoteKey) {
-        blockers.push('GitHub pull requires remotes.<name>.settings.remoteKey or remotes.<name>.settings.gistId.');
-      } else if (locator.remoteKey && !locator.gistId) {
-        notes.push(`Pull will resolve the latest gist for remoteKey '${locator.remoteKey}'.`);
+      if (!locator.remoteKey && !locator.releaseId) {
+        blockers.push('GitHub pull requires remotes.<name>.settings.remoteKey or remotes.<name>.settings.releaseId.');
+      } else if (locator.remoteKey) {
+        notes.push(`Pull will resolve the GitHub release tagged '${buildReleaseTag(locator.remoteKey)}' in ${locator.owner}/${locator.repo}.`);
       }
       return { blockers, notes };
     },
     async pullPackage(context) {
       const locator = getRemoteLocator(remoteConfig, context);
-      if (!locator.gistId && !locator.remoteKey) {
-        throw new Error('GitHub pull requires remotes.<name>.settings.remoteKey or remotes.<name>.settings.gistId.');
+      if (!locator.remoteKey && !locator.releaseId) {
+        throw new Error('GitHub pull requires remotes.<name>.settings.remoteKey or remotes.<name>.settings.releaseId.');
       }
-      return downloadPackageFromGist({
-        gistId: locator.gistId,
+      return downloadPackageFromRelease({
+        owner: locator.owner,
+        repo: locator.repo,
+        releaseId: locator.releaseId,
         remoteKey: locator.remoteKey,
         configuredToken: locator.token,
         fetchImpl: dependencies.fetchImpl,
-        env: dependencies.env,
         onProgress: context.onProgress
       });
     }
@@ -130,4 +126,3 @@ export function createProvider(remoteConfig, dependencies = {}) {
       };
   }
 }
-

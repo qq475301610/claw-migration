@@ -8,6 +8,7 @@ const OPENCLAW_MIGRATION_TEMP_PREFIXES = [
   'openclaw-migration-',
   'openclaw-migration-output-',
   'openclaw-migration-gist-',
+  'openclaw-migration-release-',
   'openclaw-migration-extract-'
 ];
 

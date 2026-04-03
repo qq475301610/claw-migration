@@ -1,14 +1,14 @@
-﻿import fs from 'node:fs/promises';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { zipDirectory } from './archive.js';
-import { uploadPackageToGist } from './gist.js';
+import { upsertPackageToRelease } from './github-release.js';
 import { persistLocalPackage } from './local.js';
 import { stageMigrationPackage } from './migration-package.js';
 import { makeTempDir, removeIfExists } from './utils.js';
 import { emitProgress } from './progress.js';
 
 export async function createMigrationArchive(options) {
-  emitProgress(options, 'Preparing package', "agent=");
+  emitProgress(options, 'Preparing package', `agent=${options.agentId}`);
   const { stagingDir, manifest } = await stageMigrationPackage(options);
   emitProgress(options, 'Compressing archive', manifest.createdAt);
   const tempOutputDir = await makeTempDir('openclaw-migration-output-');
@@ -30,12 +30,23 @@ export async function exportMigrationPackage(options) {
   const archive = await createMigrationArchive(options);
 
   try {
-    if (options.to === 'gist') {
-      emitProgress(options, 'Uploading package', 'GitHub Gist');
-      const gistResult = await uploadPackageToGist({ zipPath: archive.zipPath, manifest: archive.manifest, fetchImpl: options.fetchImpl, env: options.env, onProgress: options.onProgress });
-      emitProgress(options, 'Upload complete', gistResult.id ?? gistResult.url ?? 'ok');
+    if (options.to === 'github') {
+      emitProgress(options, 'Uploading package', `${options.owner}/${options.repo}`);
+      const releaseResult = await upsertPackageToRelease({
+        zipPath: archive.zipPath,
+        manifest: archive.manifest,
+        owner: options.owner,
+        repo: options.repo,
+        releaseId: options.releaseId,
+        remoteKey: options.remoteKey,
+        fetchImpl: options.fetchImpl,
+        env: options.env,
+        configuredToken: options.configuredToken,
+        onProgress: options.onProgress
+      });
+      emitProgress(options, 'Upload complete', releaseResult.releaseId ?? releaseResult.url ?? 'ok');
       return {
-        ...gistResult,
+        ...releaseResult,
         manifest: archive.manifest
       };
     }
@@ -53,4 +64,3 @@ export async function exportMigrationPackage(options) {
     await archive.cleanup();
   }
 }
-

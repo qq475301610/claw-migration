@@ -1,6 +1,6 @@
-﻿# Claw Migration
+# Claw Migration
 
-[English](./README.md) | [????](./README.zh-CN.md)
+[English](./README.md) | [简体中文](./README.zh-CN.md)
 
 `claw-migration` is an OpenClaw plugin and CLI for moving one agent from one device to another.
 
@@ -16,7 +16,7 @@ Use `claw-migration` when you want to:
 
 Current scope:
 - single-agent migration only
-- GitHub provider implemented
+- GitHub Release Assets provider implemented
 - WebDAV reserved for a future version
 - full migration package, not a sanitized sharing bundle
 - channel state recovery supports official OpenClaw channel-style configs and the channel plugin set from `openclaw-china`
@@ -76,12 +76,14 @@ claw-migration doctor
 
 This command will guide you through:
 - choosing a remote name
+- entering a GitHub owner
+- entering a GitHub repo
 - setting a stable `remoteKey`
 - entering your GitHub token directly into `openclaw.json`
 - deciding whether to include transcripts
 - deciding whether push/pull should switch bindings
 
-After setup, `claw-migration doctor` checks whether the bundled skill is present and whether a shared copy already exists under `~/.openclaw/skills/claw-migration`.
+After setup, `claw-migration doctor` checks whether the bundled skill is present and whether a shared copy already exists under `~/.openclaw/skills/claw-migration`. Configure `owner` and `repo` so GitHub uploads go to a dedicated release-storage repository.
 
 ### 5. Choose how you want to run the CLI
 
@@ -104,6 +106,26 @@ The plugin config lives in:
 - `~/.openclaw/openclaw.json`
 - `plugins.entries.claw-migration.config`
 
+### GitHub fields explained
+
+When `claw-migration setup` asks for GitHub fields, use these values:
+- `GitHub owner`: your GitHub username or organization name. Example: `qq475301610` or `my-team`.
+- `GitHub repo`: the repository name that stores migration release assets. Example: `claw-migration-store`.
+- `GitHub token`: a Personal Access Token that can create releases and upload release assets in that repository.
+
+How to prepare them:
+1. Decide whether migration files should live under your personal account or a GitHub organization.
+2. Create a dedicated repository for migration packages, for example `claw-migration-store`.
+3. Use the account name or organization name as `owner`.
+4. Use the repository name as `repo`.
+5. Create a token from `GitHub -> Settings -> Developer settings -> Personal access tokens` and paste it into setup.
+
+Recommended repository setup:
+- create a private repository just for migration assets
+- do not use the plugin source repository itself unless you explicitly want migration zips stored there
+- the repository must not be empty; create at least one initial commit such as a `README.md`
+- use the same `owner` and `repo` on both source and target devices
+
 Typical GitHub config:
 
 ```json
@@ -118,6 +140,8 @@ Typical GitHub config:
             "main-agent": {
               "provider": "github",
               "settings": {
+                "owner": "your-github-user-or-org",
+                "repo": "claw-migration-store",
                 "remoteKey": "main-agent",
                 "token": "ghp_xxx"
               }
@@ -139,34 +163,63 @@ Typical GitHub config:
 
 Important notes:
 - `remoteKey` is the primary stable identifier for a GitHub remote
-- `gistId` is treated as an internal cache and may be written automatically after push or pull
+- `releaseId` is an internal cache and may be written automatically after push or pull
+- users should configure and remember `remoteKey`; they do not need to manage `releaseId` manually
 - the GitHub token can be stored directly in `remotes.<name>.settings.token`
-- environment variables are still supported as a fallback, but they are no longer the recommended setup path
+- GitHub token is read from `remotes.<name>.settings.token` only
 
-## GitHub Token
+### `remoteKey` vs `releaseId`
+
+These two fields are intentionally different:
+- `remoteKey`: human-controlled stable key, shared across devices, used to find the same migration slot every time
+- `releaseId`: GitHub's internal numeric id for a specific release, used only as a local cache
+
+In practice:
+- source and target devices should use the same `remoteKey`
+- if `releaseId` is missing, the plugin can still find the correct GitHub release by `remoteKey`
+- if `releaseId` changes or is lost, you normally do not need to fix anything manually
+
+## GitHub Token And Permissions
 
 Recommended path:
 - run `claw-migration setup`
 - paste your token when prompted
 - let the plugin write it into `openclaw.json`
 
-Fallback path:
-- set `OPENCLAW_GITHUB_TOKEN`
-- or `GITHUB_TOKEN`
-- or `GH_TOKEN`
 
-The token must be able to create and update private gists.
+Where to get `owner`, `repo`, and `token`:
+1. Open the GitHub account or organization that will store migration files.
+2. Create a repository for migration assets, for example `claw-migration-store`.
+3. Copy the account or organization name as `owner`.
+4. Copy the repository name as `repo`.
+5. Go to `Settings -> Developer settings -> Personal access tokens` and create a token for that account.
 
-Where to get the token:
-1. Open GitHub.
-2. Go to `Settings -> Developer settings -> Personal access tokens`.
-3. Create either:
-- a classic token with the `gist` scope
-- or a fine-grained token with `User permissions -> Gists` set to write
+Required token behavior:
+- the token must be able to access the configured repository
+- the token must be able to create releases
+- the token must be able to upload and replace release assets
+- for private repositories, lack of permission may appear as GitHub `404 Not Found`
+
+Recommended fine-grained token setup:
+1. Open `Settings -> Developer settings -> Personal access tokens -> Fine-grained tokens`
+2. Choose the correct resource owner
+3. Under repository access, select only the migration repository, for example `claw-migration-store`
+4. Under repository permissions, give `Contents: Read and write`
+5. Generate the token and paste it into setup
+
+If you prefer a classic token, it must have enough repository access to create releases and upload assets in the target repository.
+
+Common GitHub-side setup mistakes:
+- the repository does not exist yet
+- `owner` is correct but `repo` is wrong
+- the repository is private but the token cannot access it
+- the repository is empty; GitHub releases require at least one commit in the repository
+- `owner` or `repo` was entered as a full URL instead of a name
 
 GitHub docs:
 - [Managing your personal access tokens](https://docs.github.com/github/extending-github/git-automation-with-oauth-tokens)
 - [Permissions required for fine-grained personal access tokens](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens)
+- [About releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases)
 
 ## Quick Usage
 
@@ -184,18 +237,18 @@ claw-migration push --agent main
 ```
 
 What happens after a successful `push`:
-- a GitHub gist is created or updated for the configured `remoteKey`
+- a GitHub release asset is created or updated for the configured `remoteKey`
 - the selected agent's bindings are disabled if configured
 - the linked channel account is disabled when the channel config supports an `enabled` switch
-- `gistId` is cached back into `openclaw.json`
+- `releaseId` is cached back into `openclaw.json`
 - the plugin does not manually restart the gateway
 
 ### Target device
 
 Before `pull`, make sure the target device has:
 - the plugin installed with `openclaw plugins install -l .`
-- the same `remoteKey` configured through `claw-migration setup`
-- a GitHub token configured in `openclaw.json` or available via environment variable
+- the same `owner`, `repo`, and `remoteKey` configured through `claw-migration setup`
+- a GitHub token configured in `openclaw.json`
 - if a new session still does not show the skill, install the shared fallback with `claw-migration install-skill`
 
 Then run:
@@ -233,7 +286,7 @@ claw-migration verify --agent <id> [--remote <name>] [--openclaw-dir <path>] [--
 
 What it does:
 - creates or updates `plugins.entries.claw-migration.config` in `~/.openclaw/openclaw.json`
-- lets you choose the remote name and stable `remoteKey`
+- lets you choose the remote name, GitHub owner, GitHub repo, and stable `remoteKey`
 - stores the GitHub token in plugin config
 - sets transfer and gateway behavior flags
 
@@ -289,8 +342,8 @@ Parameters:
 
 What it does:
 - creates the migration package
-- creates or updates the GitHub gist matched by `remoteKey`
-- records the latest remote package id back into plugin config
+- creates or updates the GitHub release asset matched by `remoteKey`
+- records the latest release id back into plugin config
 - disables the selected agent bindings on the source device if configured
 - disables the linked channel account when the channel config supports an `enabled` switch
 - does not manually restart the gateway
@@ -307,7 +360,7 @@ Parameters:
 `claw-migration preview pull --agent <id>` downloads the remote package and shows what would be imported.
 
 What it does:
-- resolves the remote package by `remoteKey` or cached `gistId`
+- resolves the remote package by `remoteKey` or cached `releaseId`
 - downloads and validates the package
 - checks required plugins and skills
 - shows what config, sessions, and workspace files would be overwritten
@@ -419,4 +472,3 @@ npm test
 ## More Documentation
 
 - GitHub provider guide: [docs/github-provider-guide.md](./docs/github-provider-guide.md)
-

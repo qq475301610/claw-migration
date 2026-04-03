@@ -1,4 +1,4 @@
-import fs from 'node:fs/promises';
+﻿import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -85,7 +85,7 @@ async function createOpenClawState(rootDir, { includeAgent = true, includeSuppor
             remotes: {
               primary: {
                 provider: 'github',
-                settings: { token: 'configured-token' }
+                settings: { owner: 'octo-org', repo: 'migration-store', token: 'configured-token' }
               }
             },
             transfer: {
@@ -128,26 +128,51 @@ async function createOpenClawState(rootDir, { includeAgent = true, includeSuppor
   return { openClawDir, workspacePath };
 }
 
+function releasePayload(overrides = {}) {
+  return {
+    id: 123,
+    tag_name: 'claw-migration-main',
+    html_url: 'https://github.com/octo-org/migration-store/releases/tag/claw-migration-main',
+    upload_url: 'https://uploads.github.com/repos/octo-org/migration-store/releases/123/assets{?name,label}',
+    assets: [
+      {
+        id: 456,
+        name: 'migration.zip',
+        browser_download_url: 'https://github.com/octo-org/migration-store/releases/download/claw-migration-main/migration.zip'
+      }
+    ],
+    ...overrides
+  };
+}
+
 async function makeRemoteFetchForZip(zipPath) {
-  const zipBase64 = (await fs.readFile(zipPath)).toString('base64');
+  const zipBuffer = await fs.readFile(zipPath);
   return async (url, options = {}) => {
-    if ((options.method ?? 'GET') === 'POST' || (options.method ?? 'GET') === 'PATCH') {
+    if (url.includes('/releases/tags/claw-migration-main')) {
+      return { ok: true, json: async () => releasePayload() };
+    }
+    if (url.endsWith('/releases/123')) {
+      return { ok: true, json: async () => releasePayload() };
+    }
+    if (url.endsWith('/releases/assets/456')) {
+      return new Response(zipBuffer, {
+        status: 200,
+        headers: { 'content-length': String(zipBuffer.byteLength) }
+      });
+    }
+    if ((options.method ?? 'GET') === 'POST' && url.endsWith('/releases')) {
+      return { ok: true, json: async () => releasePayload({ assets: [] }) };
+    }
+    if (url.startsWith('https://uploads.github.com/')) {
       return {
         ok: true,
-        json: async () => ({ id: 'gist-123', html_url: 'https://gist.github.com/example/gist-123' })
+        json: async () => ({ id: 456, name: 'migration.zip', browser_download_url: 'https://github.com/octo-org/migration-store/releases/download/claw-migration-main/migration.zip' })
       };
     }
-
-    return {
-      ok: true,
-      json: async () => ({
-        files: {
-          'migration.zip.base64': {
-            content: zipBase64
-          }
-        }
-      })
-    };
+    if ((options.method ?? 'GET') === 'DELETE' && url.endsWith('/releases/assets/456')) {
+      return { ok: true, text: async () => '' };
+    }
+    throw new Error(`Unexpected url: ${url}`);
   };
 }
 
@@ -168,11 +193,12 @@ test('preview push reports remote, bindings, and gateway actions', async () => {
   assert.equal(preview.willRestartGateway, false);
   assert.match(preview.warnings.join(' '), /manual gateway restart is disabled/i);
   assert.equal(preview.bindings.length, 1);
+  assert.match(preview.warnings.join(' '), /reload changes/i);
   await preview.cleanup?.();
   await fs.rm(rootDir, { recursive: true, force: true });
 });
 
-test('push uploads package, disables only target agent bindings, records gist id, and does not manually restart gateway', async () => {
+test('push uploads package, disables only target agent bindings, records release id, and does not manually restart gateway', async () => {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claw-migration-push-'));
   const state = await createOpenClawState(rootDir, { includeAgent: true });
   const restartCalls = [];
@@ -181,10 +207,18 @@ test('push uploads package, disables only target agent bindings, records gist id
     openClawDir: state.openClawDir,
     agentId: 'main',
     env: {},
-    fetchImpl: async () => ({
-      ok: true,
-      json: async () => ({ id: 'gist-123', html_url: 'https://gist.github.com/example/gist-123' })
-    }),
+    fetchImpl: async (url, options = {}) => {
+      if (url.includes('/releases/tags/claw-migration-main')) {
+        return { ok: false, status: 404, text: async () => 'not found' };
+      }
+      if ((options.method ?? 'GET') === 'POST' && url.endsWith('/releases')) {
+        return { ok: true, json: async () => releasePayload({ assets: [] }) };
+      }
+      if (url.startsWith('https://uploads.github.com/')) {
+        return { ok: true, json: async () => ({ id: 456, browser_download_url: 'https://example.test/migration.zip' }) };
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    },
     restartGateway: async () => {
       restartCalls.push('restart');
     },
@@ -199,7 +233,7 @@ test('push uploads package, disables only target agent bindings, records gist id
   const config = JSON.parse(await fs.readFile(path.join(state.openClawDir, 'openclaw.json'), 'utf8'));
   assert.equal(config.bindings.some((binding) => binding.agentId === 'main'), false);
   assert.equal(config.bindings.some((binding) => binding.agentId === 'momiji'), true);
-  assert.equal(config.plugins.entries['claw-migration'].config.remotes.primary.settings.gistId, 'gist-123');
+  assert.equal(config.plugins.entries['claw-migration'].config.remotes.primary.settings.releaseId, 123);
   assert.equal(config.plugins.entries['claw-migration'].config.state.disabledBindingsByAgent.main.length, 1);
 
   await fs.rm(rootDir, { recursive: true, force: true });
@@ -222,7 +256,7 @@ test('preview pull reports dependency blockers from remote package', async () =>
 
   const targetConfigPath = path.join(targetState.openClawDir, 'openclaw.json');
   const targetConfig = JSON.parse(await fs.readFile(targetConfigPath, 'utf8'));
-  targetConfig.plugins.entries['claw-migration'].config.remotes.primary.settings.gistId = 'gist-123';
+  targetConfig.plugins.entries['claw-migration'].config.remotes.primary.settings.releaseId = 123;
   await writeJson(targetConfigPath, targetConfig);
 
   const preview = await previewPull({
@@ -257,7 +291,7 @@ test('pull imports package, enables bindings, clears disabled snapshot, and does
 
   const targetConfigPath = path.join(targetState.openClawDir, 'openclaw.json');
   const targetConfig = JSON.parse(await fs.readFile(targetConfigPath, 'utf8'));
-  targetConfig.plugins.entries['claw-migration'].config.remotes.primary.settings.gistId = 'gist-123';
+  targetConfig.plugins.entries['claw-migration'].config.remotes.primary.settings.releaseId = 123;
   targetConfig.plugins.entries['claw-migration'].config.state.disabledBindingsByAgent.main = [
     { agentId: 'main', match: { channel: 'qqbot', accountId: 'marie_bot' } }
   ];
@@ -285,13 +319,10 @@ test('pull imports package, enables bindings, clears disabled snapshot, and does
   const config = JSON.parse(await fs.readFile(path.join(targetState.openClawDir, 'openclaw.json'), 'utf8'));
   assert.equal(config.bindings.some((binding) => binding.agentId === 'main'), true);
   assert.equal(config.plugins.entries['claw-migration'].config.state.disabledBindingsByAgent.main, undefined);
+  assert.equal(config.plugins.entries['claw-migration'].config.remotes.primary.settings.releaseId, 123);
 
   await fs.rm(rootDir, { recursive: true, force: true });
 });
-
-
-
-
 
 test('pull restores non-qqbot channel enabled state from channel snapshots', async () => {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claw-migration-pull-dingtalk-'));
@@ -319,7 +350,7 @@ test('pull restores non-qqbot channel enabled state from channel snapshots', asy
 
   const targetConfigPath = path.join(targetState.openClawDir, 'openclaw.json');
   const targetConfig = JSON.parse(await fs.readFile(targetConfigPath, 'utf8'));
-  targetConfig.plugins.entries['claw-migration'].config.remotes.primary.settings.gistId = 'gist-123';
+  targetConfig.plugins.entries['claw-migration'].config.remotes.primary.settings.releaseId = 123;
   targetConfig.plugins.entries['claw-migration'].config.state.disabledBindingsByAgent.main = [
     { agentId: 'main', match: { channel: 'dingtalk', accountId: 'default' } }
   ];

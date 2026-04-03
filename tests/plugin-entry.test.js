@@ -20,7 +20,10 @@ test('openclaw.plugin.json declares claw-migration manifest metadata', async () 
   assert.equal(Array.isArray(manifest.skills), true);
   assert.equal(manifest.skills.includes('./skills'), true);
   assert.equal(typeof manifest.configSchema, 'object');
+  assert.equal(Boolean(manifest.configSchema.properties.remotes.additionalProperties.properties.settings.properties.owner), true);
+  assert.equal(Boolean(manifest.configSchema.properties.remotes.additionalProperties.properties.settings.properties.repo), true);
   assert.equal(Boolean(manifest.configSchema.properties.remotes.additionalProperties.properties.settings.properties.remoteKey), true);
+  assert.equal(Boolean(manifest.configSchema.properties.remotes.additionalProperties.properties.settings.properties.releaseId), true);
   assert.equal(Boolean(manifest.configSchema.properties.remotes.additionalProperties.properties.settings.properties.token), true);
 });
 

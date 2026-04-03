@@ -1,5 +1,5 @@
-﻿import path from 'node:path';
-import { downloadPackageFromGist } from './gist.js';
+import path from 'node:path';
+import { downloadPackageFromRelease } from './github-release.js';
 import { materializeLocalPackage } from './local.js';
 import { extractPackageForInspection, summarizePackageContents } from './migration-package.js';
 import { resolveOpenClawDir } from './openclaw-state.js';
@@ -8,8 +8,17 @@ import { readJson, removeIfExists } from './utils.js';
 import { emitProgress } from './progress.js';
 
 async function materializeSourcePackage(options) {
-  if (options.from === 'gist') {
-    return downloadPackageFromGist({ gistId: options.gistId, remoteKey: options.remoteKey, fetchImpl: options.fetchImpl, env: options.env, configuredToken: options.configuredToken });
+  if (options.from === 'github') {
+    return downloadPackageFromRelease({
+      owner: options.owner,
+      repo: options.repo,
+      releaseId: options.releaseId,
+      remoteKey: options.remoteKey,
+      fetchImpl: options.fetchImpl,
+      env: options.env,
+      configuredToken: options.configuredToken,
+      onProgress: options.onProgress
+    });
   }
   return materializeLocalPackage({ inputPath: options.inputPath });
 }

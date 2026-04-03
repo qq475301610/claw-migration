@@ -1,4 +1,4 @@
-﻿import path from 'node:path';
+import path from 'node:path';
 import { disableAgentBindings, enableAgentBindings } from './binding-state.js';
 import { createMigrationArchive } from './export-service.js';
 import { formatPreview, formatVerify } from './format.js';
@@ -111,7 +111,8 @@ export async function pushAgentMigration(options) {
         zipPath: archive.zipPath,
         manifest: archive.manifest,
         remoteConfig: context.remoteConfig,
-        remoteName: context.remoteName
+        remoteName: context.remoteName,
+        options
       });
 
       let disabledBindings = [];
@@ -135,13 +136,13 @@ export async function pushAgentMigration(options) {
           currentPluginConfig.state.remotes[context.remoteName] = {
             lastPushAt: new Date().toISOString(),
             lastPackage: {
-              gistId: remoteResult.id ?? context.remoteConfig?.settings?.gistId ?? null,
+              releaseId: remoteResult.id ?? context.remoteConfig?.settings?.releaseId ?? null,
               url: remoteResult.url ?? null
             }
           };
           if (context.remoteConfig?.provider === 'github' && remoteResult.id) {
             currentPluginConfig.remotes[context.remoteName].settings ??= {};
-            currentPluginConfig.remotes[context.remoteName].settings.gistId = remoteResult.id;
+            currentPluginConfig.remotes[context.remoteName].settings.releaseId = remoteResult.id;
           }
 
         await writeJson(configPath, nextConfig);
@@ -199,8 +200,8 @@ export async function previewPull(options) {
 
   if (blockers.length === 0) {
     emitProgress(options, 'Pulling package from remote', context.remoteName);
-    const remotePackage = await context.provider.pullPackage({ remoteConfig: context.remoteConfig, remoteName: context.remoteName, onProgress: options.onProgress });
-    remotePackageId = remotePackage.gistId ?? null;
+    const remotePackage = await context.provider.pullPackage({ remoteConfig: context.remoteConfig, remoteName: context.remoteName, onProgress: options.onProgress, options });
+    remotePackageId = remotePackage.releaseId ?? null;
     sourceCleanup = remotePackage.cleanup ?? sourceCleanup;
     emitProgress(options, 'Previewing imported package', options.agentId);
     importPreview = await previewMigrationImport({
@@ -279,12 +280,12 @@ export async function pullAgentMigration(options) {
         currentPluginConfig.state.remotes[context.remoteName] = {
           lastPullAt: new Date().toISOString(),
           lastPackage: {
-            gistId: preview.remotePackageId ?? context.remoteConfig?.settings?.gistId ?? null
+            releaseId: preview.remotePackageId ?? context.remoteConfig?.settings?.releaseId ?? null
           }
         };
         if (context.remoteConfig?.provider === 'github' && preview.remotePackageId) {
           currentPluginConfig.remotes[context.remoteName].settings ??= {};
-          currentPluginConfig.remotes[context.remoteName].settings.gistId = preview.remotePackageId;
+          currentPluginConfig.remotes[context.remoteName].settings.releaseId = preview.remotePackageId;
         }
         await writeJson(configPath, nextConfig);
         const restartedGateway = false;
@@ -299,7 +300,7 @@ export async function pullAgentMigration(options) {
           remote: {
             name: context.remoteName,
             provider: context.remoteConfig.provider,
-            id: preview.remotePackageId ?? context.remoteConfig?.settings?.gistId ?? null
+            id: preview.remotePackageId ?? context.remoteConfig?.settings?.releaseId ?? null
           },
           importResult,
           enabledBindings: summarizeBindingTargets(enabledBindings),
@@ -339,7 +340,7 @@ export async function verifyMigration(options) {
   }
 
   emitProgress(options, 'Pulling package from remote', context.remoteName);
-  const remotePackage = await context.provider.pullPackage({ remoteConfig: context.remoteConfig, remoteName: context.remoteName, onProgress: options.onProgress });
+  const remotePackage = await context.provider.pullPackage({ remoteConfig: context.remoteConfig, remoteName: context.remoteName, onProgress: options.onProgress, options });
   try {
     return verifyMigrationPackage({
       from: 'local',

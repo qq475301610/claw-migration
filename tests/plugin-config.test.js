@@ -24,7 +24,9 @@ test('plugin config loader reads claw-migration config from openclaw.json', asyn
               primary: {
                 provider: 'github',
                 settings: {
-                  gistId: 'gist-123'
+                  owner: 'octo-org',
+                  repo: 'migration-store',
+                  releaseId: 123
                 }
               }
             },
@@ -39,7 +41,9 @@ test('plugin config loader reads claw-migration config from openclaw.json', asyn
   const loaded = await loadOpenClawConfigForPlugin({ openClawDir });
   assert.equal(loaded.pluginConfig.defaultRemote, 'primary');
   assert.equal(loaded.pluginConfig.remotes.primary.provider, 'github');
-  assert.equal(loaded.pluginConfig.remotes.primary.settings.gistId, 'gist-123');
+  assert.equal(loaded.pluginConfig.remotes.primary.settings.owner, 'octo-org');
+  assert.equal(loaded.pluginConfig.remotes.primary.settings.repo, 'migration-store');
+  assert.equal(loaded.pluginConfig.remotes.primary.settings.releaseId, 123);
   assert.equal(loaded.pluginConfig.switchBindingsOnPush, true);
   assert.equal(loaded.pluginConfig.restartGatewayOnPull, true);
 

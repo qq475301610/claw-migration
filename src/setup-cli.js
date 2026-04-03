@@ -155,6 +155,8 @@ export async function runMigrationSetup({ config, runtime, logger, openClawDir }
     const existingRemote = pluginConfig.remotes[remoteName] ?? currentRemote;
     existingRemote.settings ??= {};
 
+    const owner = await prompt(rl, 'GitHub owner', existingRemote.settings.owner ?? '');
+    const repo = await prompt(rl, 'GitHub repo', existingRemote.settings.repo ?? '');
     const remoteKey = await prompt(rl, 'Remote key (leave blank to default to the agent id at runtime)', existingRemote.settings.remoteKey ?? '');
     const token = await prompt(rl, 'GitHub token', existingRemote.settings.token ?? '', { secret: true });
     const includeTranscripts = await promptBoolean(rl, 'Include .jsonl transcripts in exports', Boolean(pluginConfig.transfer.includeTranscripts));
@@ -168,10 +170,18 @@ export async function runMigrationSetup({ config, runtime, logger, openClawDir }
       provider,
       settings: {
         ...existingRemote.settings,
+        ...(owner ? { owner } : {}),
+        ...(repo ? { repo } : {}),
         ...(remoteKey ? { remoteKey } : {}),
         ...(token ? { token } : {})
       }
     };
+    if (!owner) {
+      delete pluginConfig.remotes[remoteName].settings.owner;
+    }
+    if (!repo) {
+      delete pluginConfig.remotes[remoteName].settings.repo;
+    }
     if (!remoteKey) {
       delete pluginConfig.remotes[remoteName].settings.remoteKey;
     }

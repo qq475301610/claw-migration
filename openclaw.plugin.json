@@ -33,14 +33,20 @@
               "type": "object",
               "additionalProperties": true,
               "properties": {
-                "gistId": {
-                  "type": "string"
-                },
                 "remoteKey": {
                   "type": "string"
                 },
                 "token": {
                   "type": "string"
+                },
+                "owner": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "releaseId": {
+                  "type": "number"
                 }
               }
             }

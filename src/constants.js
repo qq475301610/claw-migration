@@ -26,6 +26,5 @@ export const EXCLUDED_PATH_SEGMENTS = [
 ];
 export const EXCLUDED_SUFFIXES = ['.sqlite', '.log'];
 export const EXCLUDED_PATTERNS = ['.deleted.', '.reset.', '.bak', '.tmp', '.zip'];
-export const GITHUB_TOKEN_ENV_VARS = ['OPENCLAW_GITHUB_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN'];
-export const DEFAULT_GIST_FILE_NAME = 'migration.zip.base64';
+export const DEFAULT_RELEASE_ASSET_NAME = 'migration.zip';
 export const DEFAULT_AGENT_DIR_NAME = 'agents';
