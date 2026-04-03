@@ -1,4 +1,4 @@
-﻿import fs from 'node:fs/promises';
+import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -239,7 +239,7 @@ test('push uploads package, disables only target agent bindings, records release
   await fs.rm(rootDir, { recursive: true, force: true });
 });
 
-test('preview pull reports dependency blockers from remote package', async () => {
+test('preview pull reports dependency warnings for missing plugins and keeps import available', async () => {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claw-migration-preview-pull-'));
   const sourceRoot = path.join(rootDir, 'source');
   const targetRoot = path.join(rootDir, 'target');
@@ -266,9 +266,9 @@ test('preview pull reports dependency blockers from remote package', async () =>
     fetchImpl: await makeRemoteFetchForZip(zipPath)
   });
 
-  assert.equal(preview.ok, false);
-  assert.match(preview.blockers.join(' '), /Missing required plugins/);
-  assert.match(preview.blockers.join(' '), /Missing required skills/);
+  assert.equal(preview.ok, true);
+  assert.equal(preview.blockers.length, 0);
+  assert.match(preview.warnings.join(' '), /Missing plugins on target will be skipped/);
   await preview.sourceCleanup?.();
   await preview.packageCleanup?.();
   await fs.rm(rootDir, { recursive: true, force: true });
@@ -321,6 +321,46 @@ test('pull imports package, enables bindings, clears disabled snapshot, and does
   assert.equal(config.plugins.entries['claw-migration'].config.state.disabledBindingsByAgent.main, undefined);
   assert.equal(config.plugins.entries['claw-migration'].config.remotes.primary.settings.releaseId, 123);
 
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+
+test('pull skips missing plugin entries during merge when target lacks that plugin', async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claw-migration-pull-skip-plugin-'));
+  const sourceRoot = path.join(rootDir, 'source');
+  const targetRoot = path.join(rootDir, 'target');
+  const sourceState = await createOpenClawState(sourceRoot, { includeAgent: true, includeSupportEntries: true });
+  const targetState = await createOpenClawState(targetRoot, { includeAgent: false, includeSupportEntries: false });
+
+  const sourceConfigPath = path.join(sourceState.openClawDir, 'openclaw.json');
+  const sourceConfig = JSON.parse(await fs.readFile(sourceConfigPath, 'utf8'));
+  sourceConfig.plugins.entries.brave = { enabled: true, mode: 'browser' };
+  await writeJson(sourceConfigPath, sourceConfig);
+
+  const zipPath = path.join(rootDir, 'migration.zip');
+  await exportMigrationPackage({
+    openClawDir: sourceState.openClawDir,
+    agentId: 'main',
+    to: 'local',
+    outputPath: zipPath
+  });
+
+  const targetConfigPath = path.join(targetState.openClawDir, 'openclaw.json');
+  const targetConfig = JSON.parse(await fs.readFile(targetConfigPath, 'utf8'));
+  targetConfig.plugins.entries['claw-migration'].config.remotes.primary.settings.releaseId = 123;
+  await writeJson(targetConfigPath, targetConfig);
+
+  const result = await pullAgentMigration({
+    openClawDir: targetState.openClawDir,
+    agentId: 'main',
+    fetchImpl: await makeRemoteFetchForZip(zipPath),
+    confirm: true,
+    skipReindex: true
+  });
+
+  assert.equal(result.ok, true);
+  const mergedConfig = JSON.parse(await fs.readFile(targetConfigPath, 'utf8'));
+  assert.equal(Boolean(mergedConfig.plugins.entries.brave), false);
   await fs.rm(rootDir, { recursive: true, force: true });
 });
 

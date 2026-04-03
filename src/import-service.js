@@ -1,4 +1,4 @@
-﻿import fs from 'node:fs/promises';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { mergeOpenClawConfig } from './merge.js';
 import { findAgent, resolveOpenClawDir } from './openclaw-state.js';
@@ -55,7 +55,9 @@ async function applyImportPreview(preview, options = {}) {
       sourceConfig,
       targetConfig,
       agentId: preview.agentId,
-      openClawDir
+      openClawDir,
+      skipChannels: preview.importStrategy?.skipChannels ?? [],
+      skipPlugins: preview.importStrategy?.skipPlugins ?? []
     });
 
     const mergedAgent = findAgent(mergedConfig, preview.agentId);

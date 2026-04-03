@@ -1,4 +1,4 @@
-import path from 'node:path';
+﻿import path from 'node:path';
 import { downloadPackageFromRelease } from './github-release.js';
 import { materializeLocalPackage } from './local.js';
 import { extractPackageForInspection, summarizePackageContents } from './migration-package.js';
@@ -15,7 +15,6 @@ async function materializeSourcePackage(options) {
       releaseId: options.releaseId,
       remoteKey: options.remoteKey,
       fetchImpl: options.fetchImpl,
-      env: options.env,
       configuredToken: options.configuredToken,
       onProgress: options.onProgress
     });
@@ -63,21 +62,17 @@ export async function previewMigrationImport(options) {
     const targetAgent = findAgent(targetConfig, inspection.agentId);
     const requiredChannels = inspection.manifest?.requires?.channels ?? [];
     const requiredPlugins = inspection.manifest?.requires?.plugins ?? [];
-    const requiredSkills = inspection.manifest?.requires?.skills ?? [];
 
     const missingChannels = requiredChannels.filter((name) => !targetConfig?.channels?.[name]);
     const missingPlugins = requiredPlugins.filter((name) => !targetConfig?.plugins?.entries?.[name]);
-    const missingSkills = requiredSkills.filter((name) => !targetConfig?.skills?.entries?.[name]);
     const blockers = [...inspection.blockers];
+    const warnings = [...inspection.warnings];
 
     if (missingChannels.length > 0) {
-      blockers.push(`Missing required channels: ${missingChannels.join(', ')}`);
+      warnings.push(`Missing channels on target will be skipped during config merge: ${missingChannels.join(', ')}`);
     }
     if (missingPlugins.length > 0) {
-      blockers.push(`Missing required plugins: ${missingPlugins.join(', ')}`);
-    }
-    if (missingSkills.length > 0) {
-      blockers.push(`Missing required skills: ${missingSkills.join(', ')}`);
+      warnings.push(`Missing plugins on target will be skipped during config merge: ${missingPlugins.join(', ')}`);
     }
 
     return {
@@ -100,10 +95,14 @@ export async function previewMigrationImport(options) {
       missing: {
         channels: missingChannels,
         plugins: missingPlugins,
-        skills: missingSkills
+        skills: []
+      },
+      importStrategy: {
+        skipChannels: missingChannels,
+        skipPlugins: missingPlugins
       },
       blockers,
-      warnings: inspection.warnings,
+      warnings,
       sourceCleanup: source.cleanup ?? (async () => {}),
       packageCleanup: async () => {
         await removeIfExists(inspection.extractedDir);
@@ -114,4 +113,3 @@ export async function previewMigrationImport(options) {
     throw error;
   }
 }
-

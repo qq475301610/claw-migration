@@ -1,4 +1,4 @@
-﻿import fs from 'node:fs/promises';
+import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -167,7 +167,7 @@ test('local export, verify, preview, and import succeeds for a single agent pack
   await fs.rm(rootDir, { recursive: true, force: true });
 });
 
-test('preview reports missing plugin and skill requirements as blockers', async () => {
+test('preview reports missing plugin requirements as warnings and does not block import', async () => {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openclaw-preview-block-'));
   const sourceRoot = path.join(rootDir, 'source');
   const targetRoot = path.join(rootDir, 'target');
@@ -195,9 +195,9 @@ test('preview reports missing plugin and skill requirements as blockers', async 
     openClawDir: targetState.openClawDir
   });
 
-  assert.equal(preview.ok, false);
-  assert.match(preview.blockers.join(' '), /Missing required plugins/);
-  assert.match(preview.blockers.join(' '), /Missing required skills/);
+  assert.equal(preview.ok, true);
+  assert.equal(preview.blockers.length, 0);
+  assert.match(preview.warnings.join(' '), /Missing plugins on target will be skipped/);
 
   await preview.sourceCleanup?.();
   await preview.packageCleanup?.();

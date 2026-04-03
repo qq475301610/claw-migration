@@ -35,7 +35,15 @@ function buildWorkspacePath({ sourceConfig, sourceAgent, targetConfig, targetAge
   return path.join(defaultBaseDir, path.basename(sourceWorkspace));
 }
 
-export function mergeOpenClawConfig({ sourceConfig, targetConfig, agentId, openClawDir }) {
+function omitKeys(record, keysToOmit = []) {
+  const source = deepClone(record ?? {});
+  for (const key of keysToOmit) {
+    delete source[key];
+  }
+  return source;
+}
+
+export function mergeOpenClawConfig({ sourceConfig, targetConfig, agentId, openClawDir, skipChannels = [], skipPlugins = [] }) {
   const source = ensureConfigShape(sourceConfig, openClawDir);
   const target = ensureConfigShape(targetConfig, openClawDir);
   const result = deepClone(target);
@@ -66,10 +74,10 @@ export function mergeOpenClawConfig({ sourceConfig, targetConfig, agentId, openC
   result.messages = mergeObjects(result.messages ?? {}, source.messages ?? {});
   result.hooks = mergeObjects(result.hooks ?? {}, source.hooks ?? {});
   result.models = mergeObjects(result.models ?? {}, source.models ?? {});
-  result.channels = mergeObjects(result.channels ?? {}, source.channels ?? {});
+  result.channels = mergeObjects(result.channels ?? {}, omitKeys(source.channels ?? {}, skipChannels));
 
   result.plugins ??= {};
-  result.plugins.entries = mergeObjects(result.plugins.entries ?? {}, source.plugins?.entries ?? {});
+  result.plugins.entries = mergeObjects(result.plugins.entries ?? {}, omitKeys(source.plugins?.entries ?? {}, skipPlugins));
   result.skills ??= {};
   result.skills.entries = mergeObjects(result.skills.entries ?? {}, source.skills?.entries ?? {});
 
