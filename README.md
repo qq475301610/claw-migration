@@ -252,6 +252,10 @@ What happens after a successful `pull`:
 - the linked channel account is re-enabled when the channel config supports an `enabled` switch
 - the plugin does not manually restart the gateway
 
+Session history note:
+- if you want old session history to remain easy to browse and continue, use the same agent id for both `push --agent` and `pull --agent`
+- cross-agent import is supported, but old sessions may not appear under the new target agent as expected
+
 ## Command Reference
 
 Available commands:
@@ -381,6 +385,10 @@ Parameters:
 Important note about `--yes`:
 - without `--yes`, `pull` first shows a preview and then asks for confirmation
 - with `--yes`, `pull` still performs preview validation internally, but it does not stop for confirmation
+
+Important note about agent ids:
+- if session continuity matters, keep the `push --agent` and `pull --agent` values the same
+- importing one source agent into a different target agent slot is supported, but old session records may not remain directly browsable under the new agent id
 
 ### verify
 

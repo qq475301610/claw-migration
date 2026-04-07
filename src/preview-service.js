@@ -1,9 +1,8 @@
-import path from 'node:path';
+﻿import path from 'node:path';
 import { downloadPackageFromRelease } from './github-release.js';
 import { materializeLocalPackage } from './local.js';
 import { extractPackageForInspection, summarizePackageContents } from './migration-package.js';
-import { resolveOpenClawDir } from './openclaw-state.js';
-import { findAgent } from './openclaw-state.js';
+import { resolveOpenClawDir, findAgent } from './openclaw-state.js';
 import { readJson, removeIfExists } from './utils.js';
 import { emitProgress } from './progress.js';
 
@@ -69,7 +68,7 @@ export async function previewMigrationImport(options) {
     const warnings = [...inspection.warnings];
 
     if (missingChannels.length > 0) {
-      warnings.push(`Missing channels on target will be skipped during config merge: ${missingChannels.join(', ')}`);
+      warnings.push(`Missing channel config will be created or partially restored on target as needed: ${missingChannels.join(', ')}`);
     }
     if (missingPlugins.length > 0) {
       warnings.push(`Missing plugins on target will be skipped during config merge: ${missingPlugins.join(', ')}`);
@@ -91,7 +90,7 @@ export async function previewMigrationImport(options) {
       target: {
         openClawDir,
         hasExistingAgent: Boolean(targetAgent),
-        workspacePath: targetAgent?.workspace ?? targetConfig?.agents?.defaults?.workspace ?? path.join(openClawDir, inspection.agentId === 'main' ? 'workspace' : `workspace-${inspection.agentId}`)
+        workspacePath: targetAgent?.workspace ?? targetConfig?.agents?.defaults?.workspace ?? path.join(openClawDir, options.agentId === 'main' ? 'workspace' : `workspace-${options.agentId}`)
       },
       missing: {
         channels: missingChannels,
@@ -99,7 +98,7 @@ export async function previewMigrationImport(options) {
         skills: []
       },
       importStrategy: {
-        skipChannels: missingChannels,
+        skipChannels: [],
         skipPlugins: missingPlugins
       },
       blockers,

@@ -1,4 +1,4 @@
-import fs from 'node:fs/promises';
+﻿import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -201,5 +201,124 @@ test('preview reports missing plugin requirements as warnings and does not block
 
   await preview.sourceCleanup?.();
   await preview.packageCleanup?.();
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test('import can create a missing channel config and restore only the matched account', async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openclaw-local-channel-merge-'));
+  const sourceRoot = path.join(rootDir, 'source');
+  const targetRoot = path.join(rootDir, 'target');
+  await createOpenClawState(sourceRoot, { includeAgent: true });
+  const targetState = await createOpenClawState(targetRoot, { includeAgent: false });
+
+  const sourceConfigPath = path.join(sourceRoot, '.openclaw', 'openclaw.json');
+  const sourceConfig = JSON.parse(await fs.readFile(sourceConfigPath, 'utf8'));
+  sourceConfig.channels.qqbot.accounts.momiji_bot = {
+    appId: '200000000',
+    clientSecret: 'other-secret'
+  };
+  sourceConfig.channels.qqbot.asr = { enabled: true };
+  await writeJson(sourceConfigPath, sourceConfig);
+
+  const targetConfigPath = path.join(targetState.openClawDir, 'openclaw.json');
+  const targetConfig = JSON.parse(await fs.readFile(targetConfigPath, 'utf8'));
+  delete targetConfig.channels;
+  await writeJson(targetConfigPath, targetConfig);
+
+  const zipPath = path.join(rootDir, 'main-migration.zip');
+  await exportMigrationPackage({
+    openClawDir: path.join(sourceRoot, '.openclaw'),
+    agentId: 'main',
+    to: 'local',
+    outputPath: zipPath
+  });
+
+  const preview = await previewMigrationImport({
+    from: 'local',
+    inputPath: zipPath,
+    agentId: 'main',
+    openClawDir: targetState.openClawDir
+  });
+
+  assert.equal(preview.ok, true);
+  assert.match(preview.warnings.join(' '), /Missing channel config will be created or partially restored/);
+  await preview.sourceCleanup?.();
+  await preview.packageCleanup?.();
+
+  const importResult = await importMigrationPackage({
+    from: 'local',
+    inputPath: zipPath,
+    agentId: 'main',
+    openClawDir: targetState.openClawDir,
+    confirm: true,
+    skipReindex: true
+  });
+
+  assert.equal(importResult.ok, true);
+  const mergedConfig = JSON.parse(await fs.readFile(targetConfigPath, 'utf8'));
+  assert.deepEqual(mergedConfig.channels.qqbot.accounts, {
+    marie_bot: {
+      appId: '102877854',
+      clientSecret: 'client-secret'
+    }
+  });
+  assert.equal(mergedConfig.channels.qqbot.asr, undefined);
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test('import removes stale root openclaw-china credentials when restoring an account-scoped channel', async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openclaw-local-channel-cleanup-'));
+  const sourceRoot = path.join(rootDir, 'source');
+  const targetRoot = path.join(rootDir, 'target');
+  await createOpenClawState(sourceRoot, { includeAgent: true });
+  const targetState = await createOpenClawState(targetRoot, { includeAgent: false });
+
+  const sourceConfigPath = path.join(sourceRoot, '.openclaw', 'openclaw.json');
+  const sourceConfig = JSON.parse(await fs.readFile(sourceConfigPath, 'utf8'));
+  sourceConfig.channels.qqbot.accounts.marie_bot.webhookPath = '/qq/source';
+  await writeJson(sourceConfigPath, sourceConfig);
+
+  const targetConfigPath = path.join(targetState.openClawDir, 'openclaw.json');
+  const targetConfig = JSON.parse(await fs.readFile(targetConfigPath, 'utf8'));
+  targetConfig.channels.qqbot = {
+    enabled: true,
+    defaultAccount: 'marie_bot',
+    appId: 'legacy-app',
+    clientSecret: 'legacy-secret',
+    webhookPath: '/qq/legacy'
+  };
+  await writeJson(targetConfigPath, targetConfig);
+
+  const zipPath = path.join(rootDir, 'main-migration.zip');
+  await exportMigrationPackage({
+    openClawDir: path.join(sourceRoot, '.openclaw'),
+    agentId: 'main',
+    to: 'local',
+    outputPath: zipPath
+  });
+
+  const importResult = await importMigrationPackage({
+    from: 'local',
+    inputPath: zipPath,
+    agentId: 'main',
+    openClawDir: targetState.openClawDir,
+    confirm: true,
+    skipReindex: true
+  });
+
+  assert.equal(importResult.ok, true);
+  const mergedConfig = JSON.parse(await fs.readFile(targetConfigPath, 'utf8'));
+  assert.equal(mergedConfig.channels.qqbot.enabled, true);
+  assert.equal(mergedConfig.channels.qqbot.defaultAccount, 'marie_bot');
+  assert.equal(mergedConfig.channels.qqbot.appId, undefined);
+  assert.equal(mergedConfig.channels.qqbot.clientSecret, undefined);
+  assert.equal(mergedConfig.channels.qqbot.webhookPath, undefined);
+  assert.deepEqual(mergedConfig.channels.qqbot.accounts.marie_bot, {
+    appId: '102877854',
+    clientSecret: 'client-secret',
+    webhookPath: '/qq/source'
+  });
+
   await fs.rm(rootDir, { recursive: true, force: true });
 });

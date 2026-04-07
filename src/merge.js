@@ -1,4 +1,4 @@
-import path from 'node:path';
+﻿import path from 'node:path';
 import { findAgent } from './openclaw-state.js';
 import { deepClone, mergeObjects } from './utils.js';
 
@@ -43,6 +43,77 @@ function omitKeys(record, keysToOmit = []) {
   return source;
 }
 
+function isRecord(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const ROOT_CHANNEL_KEYS_TO_PRESERVE = new Set(['enabled', 'accounts', 'defaultAccount']);
+
+function selectBoundChannels(sourceChannels, bindings, skipChannels = []) {
+  const selected = {};
+  const accountScopedChannels = new Map();
+
+  for (const binding of bindings) {
+    const channelId = binding?.match?.channel;
+    if (!channelId || skipChannels.includes(channelId)) {
+      continue;
+    }
+
+    const sourceChannel = sourceChannels?.[channelId];
+    if (!isRecord(sourceChannel)) {
+      continue;
+    }
+
+    const accountId = binding?.match?.accountId ?? null;
+    const sourceAccounts = isRecord(sourceChannel.accounts) ? sourceChannel.accounts : null;
+    const sourceAccount = accountId && sourceAccounts && isRecord(sourceAccounts[accountId])
+      ? sourceAccounts[accountId]
+      : null;
+
+    if (sourceAccount) {
+      selected[channelId] ??= {};
+      selected[channelId].accounts ??= {};
+      selected[channelId].accounts[accountId] = deepClone(sourceAccount);
+      accountScopedChannels.set(channelId, true);
+      continue;
+    }
+
+    selected[channelId] = mergeObjects(selected[channelId] ?? {}, deepClone(sourceChannel));
+  }
+
+  return {
+    channels: selected,
+    accountScopedChannels: [...accountScopedChannels.keys()]
+  };
+}
+
+function pruneRootChannelFieldsForAccountScopedImports(targetChannels, importedChannels, accountScopedChannels) {
+  for (const channelId of accountScopedChannels) {
+    const targetChannel = targetChannels?.[channelId];
+    const importedChannel = importedChannels?.[channelId];
+    if (!isRecord(targetChannel) || !isRecord(importedChannel?.accounts)) {
+      continue;
+    }
+
+    const importedRootKeys = new Set();
+    for (const accountConfig of Object.values(importedChannel.accounts)) {
+      if (!isRecord(accountConfig)) {
+        continue;
+      }
+
+      for (const key of Object.keys(accountConfig)) {
+        if (!ROOT_CHANNEL_KEYS_TO_PRESERVE.has(key)) {
+          importedRootKeys.add(key);
+        }
+      }
+    }
+
+    for (const key of importedRootKeys) {
+      delete targetChannel[key];
+    }
+  }
+}
+
 export function mergeOpenClawConfig({ sourceConfig, targetConfig, agentId, sourceAgentId = agentId, openClawDir, skipChannels = [], skipPlugins = [] }) {
   const source = ensureConfigShape(sourceConfig, openClawDir);
   const target = ensureConfigShape(targetConfig, openClawDir);
@@ -71,13 +142,16 @@ export function mergeOpenClawConfig({ sourceConfig, targetConfig, agentId, sourc
     .map((binding) => ({ ...deepClone(binding), agentId }));
   const otherBindings = (result.bindings ?? []).filter((binding) => binding?.agentId !== agentId);
   result.bindings = [...otherBindings, ...deepClone(sourceBindings)];
+  const selectedChannels = selectBoundChannels(source.channels ?? {}, sourceBindings, skipChannels);
 
   result.agents.defaults = mergeObjects(result.agents.defaults, source.agents.defaults ?? {});
   result.tools = mergeObjects(result.tools ?? {}, source.tools ?? {});
   result.messages = mergeObjects(result.messages ?? {}, source.messages ?? {});
   result.hooks = mergeObjects(result.hooks ?? {}, source.hooks ?? {});
   result.models = mergeObjects(result.models ?? {}, source.models ?? {});
-  result.channels = mergeObjects(result.channels ?? {}, omitKeys(source.channels ?? {}, skipChannels));
+  result.channels ??= {};
+  pruneRootChannelFieldsForAccountScopedImports(result.channels, selectedChannels.channels, selectedChannels.accountScopedChannels);
+  result.channels = mergeObjects(result.channels, selectedChannels.channels);
 
   result.plugins ??= {};
   result.plugins.entries = mergeObjects(result.plugins.entries ?? {}, omitKeys(source.plugins?.entries ?? {}, skipPlugins));

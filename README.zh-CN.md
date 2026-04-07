@@ -252,6 +252,10 @@ claw-migration pull --agent main --yes
 - 如果绑定的是受支持 channel，会把对应账号或 channel 恢复成可用状态
 - 不会手动重启 gateway
 
+Session 历史说明：
+- 如果你希望旧 session 历史仍然容易查阅并继续续接，`push --agent` 和 `pull --agent` 最好使用同一个 agent id
+- 虽然支持跨 agent 导入，但旧 session 记录在新的目标 agent 下不一定还能按预期直接查阅
+
 ## 命令说明
 
 可用命令：
@@ -381,6 +385,10 @@ claw-migration verify --agent <id> [--remote <name>] [--openclaw-dir <path>] [--
 关于 `--yes` 的重要说明：
 - 不带 `--yes` 时，`pull` 会先打印 preview，然后停下来问你是否继续
 - 带上 `--yes` 时，`pull` 仍然会在内部做 preview 校验，但不会再停下来等待确认
+
+关于 agent id 的重要说明：
+- 如果你在意 session 连续性，`push --agent` 和 `pull --agent` 应尽量保持同一个 agent id
+- 把一个源 agent 导入到不同的目标 agent 槽位虽然是支持的，但旧 session 记录不一定还能在新的 agent id 下直接查阅
 
 ### verify
 
