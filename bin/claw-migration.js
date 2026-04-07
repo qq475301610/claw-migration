@@ -104,6 +104,10 @@ async function main() {
       confirm = await promptYesNo('Apply this pull?');
       await preview.sourceCleanup?.();
       await preview.packageCleanup?.();
+      if (!confirm) {
+        console.log('Pull cancelled. No changes were applied.');
+        return;
+      }
     }
     const result = await pullAgentMigration({ ...options, confirm });
     console.log(JSON.stringify(result, null, 2));
@@ -147,3 +151,4 @@ main().catch((error) => {
   }
   process.exitCode = 1;
 });
+

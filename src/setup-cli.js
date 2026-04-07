@@ -30,6 +30,15 @@ function resolveWriteConfig(runtime) {
   return typeof runtime.config.writeConfigFile === 'function' ? runtime.config.writeConfigFile : undefined;
 }
 
+export function buildSetupRemoteSettings(settings = {}) {
+  return {
+    ...(settings.owner ? { owner: settings.owner } : {}),
+    ...(settings.repo ? { repo: settings.repo } : {}),
+    ...(settings.token ? { token: settings.token } : {}),
+    ...(settings.remoteKey ? { remoteKey: settings.remoteKey } : {})
+  };
+}
+
 async function prompt(rl, message, defaultValue = '', { secret = false } = {}) {
   const suffix = defaultValue ? ` [${secret ? 'configured' : defaultValue}]` : '';
   const answer = (await rl.question(`${message}${suffix}: `)).trim();
@@ -152,7 +161,15 @@ export async function runMigrationSetup({ config, runtime, logger, openClawDir }
     logger?.info?.('Claw Migration setup');
     const remoteName = await prompt(rl, 'Remote name', currentRemoteName);
     const provider = 'github';
-    const existingRemote = pluginConfig.remotes[remoteName] ?? currentRemote;
+    const existingRemote = pluginConfig.remotes[remoteName]
+      ? {
+          ...pluginConfig.remotes[remoteName],
+          settings: buildSetupRemoteSettings(pluginConfig.remotes[remoteName].settings ?? {})
+        }
+      : {
+          ...currentRemote,
+          settings: buildSetupRemoteSettings(currentRemote.settings ?? {})
+        };
     existingRemote.settings ??= {};
 
     const owner = await prompt(rl, 'GitHub owner', existingRemote.settings.owner ?? '');
@@ -261,3 +278,4 @@ export function registerMigrationCli(api = {}) {
     { commands: ['migration'] }
   );
 }
+

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { installMigrationSkill, runMigrationDoctor } from '../src/setup-cli.js';
+import { buildSetupRemoteSettings, installMigrationSkill, runMigrationDoctor } from '../src/setup-cli.js';
 
 async function writeJson(filePath, value) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -78,4 +78,21 @@ test('runMigrationDoctor reports installed shared skill when present', async () 
   assert.match(result.outputText, /shared skill is installed/i);
 
   await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test('buildSetupRemoteSettings does not copy releaseId into a new remote template', () => {
+  const result = buildSetupRemoteSettings({
+    owner: 'qq475301610',
+    repo: 'claw-migration-store',
+    token: 'secret',
+    remoteKey: 'main',
+    releaseId: 123
+  });
+
+  assert.deepEqual(result, {
+    owner: 'qq475301610',
+    repo: 'claw-migration-store',
+    token: 'secret',
+    remoteKey: 'main'
+  });
 });
