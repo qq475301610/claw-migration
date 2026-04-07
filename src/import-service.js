@@ -55,6 +55,7 @@ async function applyImportPreview(preview, options = {}) {
       sourceConfig,
       targetConfig,
       agentId: preview.agentId,
+      sourceAgentId: preview.sourceAgentId ?? preview.manifest?.source?.agentId ?? preview.agentId,
       openClawDir,
       skipChannels: preview.importStrategy?.skipChannels ?? [],
       skipPlugins: preview.importStrategy?.skipPlugins ?? []
@@ -67,7 +68,7 @@ async function applyImportPreview(preview, options = {}) {
     emitProgress(options, 'Writing merged config', configPath);
     await writeJson(configPath, mergedConfig);
 
-    const extractedAgentRoot = path.join(preview.extractedDir, 'agents', preview.agentId);
+    const extractedAgentRoot = path.join(preview.extractedDir, 'agents', preview.sourceAgentId ?? preview.manifest?.source?.agentId ?? preview.agentId);
     const targetAgentRoot = path.join(openClawDir, 'agents', preview.agentId);
     emitProgress(options, 'Restoring agent files', targetAgentRoot);
     await copyTree(path.join(extractedAgentRoot, 'agent'), path.join(targetAgentRoot, 'agent'));

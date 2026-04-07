@@ -1,4 +1,4 @@
-﻿import path from 'node:path';
+import path from 'node:path';
 import { findAgent } from './openclaw-state.js';
 import { deepClone, mergeObjects } from './utils.js';
 
@@ -43,19 +43,20 @@ function omitKeys(record, keysToOmit = []) {
   return source;
 }
 
-export function mergeOpenClawConfig({ sourceConfig, targetConfig, agentId, openClawDir, skipChannels = [], skipPlugins = [] }) {
+export function mergeOpenClawConfig({ sourceConfig, targetConfig, agentId, sourceAgentId = agentId, openClawDir, skipChannels = [], skipPlugins = [] }) {
   const source = ensureConfigShape(sourceConfig, openClawDir);
   const target = ensureConfigShape(targetConfig, openClawDir);
   const result = deepClone(target);
 
-  const sourceAgent = findAgent(source, agentId);
+  const sourceAgent = findAgent(source, sourceAgentId);
   if (!sourceAgent) {
-    throw new Error(`Source package does not include agent: ${agentId}`);
+    throw new Error(`Source package does not include agent: ${sourceAgentId}`);
   }
 
   const targetAgentIndex = result.agents.list.findIndex((agent) => agent?.id === agentId);
   const targetAgent = targetAgentIndex >= 0 ? result.agents.list[targetAgentIndex] : null;
   const mergedAgent = deepClone(sourceAgent);
+  mergedAgent.id = agentId;
   mergedAgent.workspace = buildWorkspacePath({ sourceConfig: source, sourceAgent, targetConfig: target, targetAgent, agentId, openClawDir });
   mergedAgent.agentDir = path.join(openClawDir, 'agents', agentId);
 
@@ -65,7 +66,9 @@ export function mergeOpenClawConfig({ sourceConfig, targetConfig, agentId, openC
     result.agents.list.push(mergedAgent);
   }
 
-  const sourceBindings = (source.bindings ?? []).filter((binding) => binding?.agentId === agentId);
+  const sourceBindings = (source.bindings ?? [])
+    .filter((binding) => binding?.agentId === sourceAgentId)
+    .map((binding) => ({ ...deepClone(binding), agentId }));
   const otherBindings = (result.bindings ?? []).filter((binding) => binding?.agentId !== agentId);
   result.bindings = [...otherBindings, ...deepClone(sourceBindings)];
 

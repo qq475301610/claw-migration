@@ -1,4 +1,4 @@
-﻿import fs from 'node:fs/promises';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
   CORE_WORKSPACE_FILES,
@@ -153,10 +153,10 @@ export async function stageMigrationPackage({ openClawDir, agentId, includeTrans
   return { stagingDir, manifest, state };
 }
 
-export async function validateExtractedPackage({ extractedDir, agentId }) {
+export async function validateExtractedPackage({ extractedDir, sourceAgentId }) {
   const packageRoot = await findPackageRoot(extractedDir);
   const manifest = await readJson(path.join(packageRoot, 'manifest.json'));
-  const effectiveAgentId = agentId ?? manifest?.source?.agentId;
+  const effectiveAgentId = sourceAgentId ?? manifest?.source?.agentId;
   const requiredFiles = [
     ...PACKAGE_ROOT_FILES,
     toPosixPath(path.join('agents', effectiveAgentId, 'agent', 'auth-profiles.json')),
@@ -197,7 +197,7 @@ export async function validateExtractedPackage({ extractedDir, agentId }) {
 export async function extractPackageForInspection({ packagePath, agentId }) {
   const extractedDir = await makeTempDir('openclaw-migration-extract-');
   await unzipToDirectory(packagePath, extractedDir);
-  const validation = await validateExtractedPackage({ extractedDir, agentId });
+  const validation = await validateExtractedPackage({ extractedDir, sourceAgentId: agentId });
   return { extractedDir, ...validation };
 }
 

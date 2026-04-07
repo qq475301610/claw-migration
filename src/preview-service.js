@@ -1,4 +1,4 @@
-﻿import path from 'node:path';
+import path from 'node:path';
 import { downloadPackageFromRelease } from './github-release.js';
 import { materializeLocalPackage } from './local.js';
 import { extractPackageForInspection, summarizePackageContents } from './migration-package.js';
@@ -27,7 +27,7 @@ export async function verifyMigrationPackage(options) {
   const source = await materializeSourcePackage(options);
   try {
     emitProgress(options, 'Extracting archive', source.packagePath);
-    const inspection = await extractPackageForInspection({ packagePath: source.packagePath, agentId: options.agentId });
+    const inspection = await extractPackageForInspection({ packagePath: source.packagePath });
     emitProgress(options, 'Validating package', inspection.agentId);
     const files = await summarizePackageContents(inspection.packageRoot);
     return {
@@ -47,7 +47,7 @@ export async function previewMigrationImport(options) {
   const source = await materializeSourcePackage(options);
   try {
     emitProgress(options, 'Extracting archive', source.packagePath);
-    const inspection = await extractPackageForInspection({ packagePath: source.packagePath, agentId: options.agentId });
+    const inspection = await extractPackageForInspection({ packagePath: source.packagePath });
     emitProgress(options, 'Validating package', inspection.agentId);
     const openClawDir = resolveOpenClawDir({ openClawDir: options.openClawDir });
     emitProgress(options, 'Inspecting target config', openClawDir);
@@ -59,7 +59,7 @@ export async function previewMigrationImport(options) {
       targetConfig = null;
     }
 
-    const targetAgent = findAgent(targetConfig, inspection.agentId);
+    const targetAgent = findAgent(targetConfig, options.agentId);
     const requiredChannels = inspection.manifest?.requires?.channels ?? [];
     const requiredPlugins = inspection.manifest?.requires?.plugins ?? [];
 
@@ -78,7 +78,8 @@ export async function previewMigrationImport(options) {
     return {
       ok: blockers.length === 0,
       manifest: inspection.manifest,
-      agentId: inspection.agentId,
+      agentId: options.agentId,
+      sourceAgentId: inspection.agentId,
       packagePath: source.packagePath,
       extractedDir: inspection.packageRoot,
       overwrite: targetAgent

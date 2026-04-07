@@ -148,7 +148,7 @@ function releasePayload(overrides = {}) {
 async function makeRemoteFetchForZip(zipPath) {
   const zipBuffer = await fs.readFile(zipPath);
   return async (url, options = {}) => {
-    if (url.includes('/releases/tags/claw-migration-main')) {
+    if (url.includes('/releases/tags/claw-migration-')) {
       return { ok: true, json: async () => releasePayload() };
     }
     if (url.endsWith('/releases/123')) {
@@ -208,7 +208,7 @@ test('push uploads package, disables only target agent bindings, records release
     agentId: 'main',
     env: {},
     fetchImpl: async (url, options = {}) => {
-      if (url.includes('/releases/tags/claw-migration-main')) {
+      if (url.includes('/releases/tags/claw-migration-')) {
         return { ok: false, status: 404, text: async () => 'not found' };
       }
       if ((options.method ?? 'GET') === 'POST' && url.endsWith('/releases')) {
@@ -415,6 +415,59 @@ test('pull restores non-qqbot channel enabled state from channel snapshots', asy
   const config = JSON.parse(await fs.readFile(path.join(targetState.openClawDir, 'openclaw.json'), 'utf8'));
   assert.equal(config.channels.dingtalk.enabled, false);
   assert.equal(config.plugins.entries['claw-migration'].config.state.disabledChannelAccountsByAgent.main, undefined);
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test('pull can import a different source agent into the selected target agent slot', async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claw-migration-pull-cross-agent-'));
+  const sourceRoot = path.join(rootDir, 'source');
+  const targetRoot = path.join(rootDir, 'target');
+  const sourceState = await createOpenClawState(sourceRoot, { includeAgent: false, includeSupportEntries: true });
+  const targetState = await createOpenClawState(targetRoot, { includeAgent: true, includeSupportEntries: true });
+
+  const sourceConfigPath = path.join(sourceState.openClawDir, 'openclaw.json');
+  const sourceConfig = JSON.parse(await fs.readFile(sourceConfigPath, 'utf8'));
+  const momijiWorkspace = path.join(sourceState.openClawDir, 'workspace-momiji');
+  sourceConfig.agents.list = [{ id: 'momiji', name: 'Momiji', workspace: momijiWorkspace }];
+  sourceConfig.bindings = [{ agentId: 'momiji', match: { channel: 'qqbot', accountId: 'marie_bot' } }];
+  await writeJson(sourceConfigPath, sourceConfig);
+
+  const momijiAgentDir = path.join(sourceState.openClawDir, 'agents', 'momiji');
+  await fs.mkdir(path.join(momijiAgentDir, 'agent'), { recursive: true });
+  await fs.mkdir(path.join(momijiAgentDir, 'sessions'), { recursive: true });
+  await writeJson(path.join(momijiAgentDir, 'agent', 'auth-profiles.json'), { profiles: { selected: 'momiji' } });
+  await writeJson(path.join(momijiAgentDir, 'agent', 'models.json'), { default: 'gpt-5' });
+  await writeJson(path.join(momijiAgentDir, 'sessions', 'sessions.json'), { sessions: [{ key: 'agent:momiji:main', id: 'session-1' }] });
+  await createWorkspace(momijiWorkspace);
+
+  const zipPath = path.join(rootDir, 'migration.zip');
+  await exportMigrationPackage({
+    openClawDir: sourceState.openClawDir,
+    agentId: 'momiji',
+    to: 'local',
+    outputPath: zipPath
+  });
+
+  const targetConfigPath = path.join(targetState.openClawDir, 'openclaw.json');
+  const targetConfig = JSON.parse(await fs.readFile(targetConfigPath, 'utf8'));
+  targetConfig.plugins.entries['claw-migration'].config.remotes.primary.settings.remoteKey = 'momiji';
+  await writeJson(targetConfigPath, targetConfig);
+
+  const result = await pullAgentMigration({
+    openClawDir: targetState.openClawDir,
+    agentId: 'main',
+    fetchImpl: await makeRemoteFetchForZip(zipPath),
+    confirm: true,
+    skipReindex: true
+  });
+
+  assert.equal(result.ok, true);
+  const mergedConfig = JSON.parse(await fs.readFile(targetConfigPath, 'utf8'));
+  const mainAgent = mergedConfig.agents.list.find((agent) => agent.id === 'main');
+  assert.equal(mainAgent.name, 'Momiji');
+  assert.equal(mergedConfig.bindings.some((binding) => binding.agentId === 'main'), true);
+  assert.equal(mergedConfig.bindings.some((binding) => binding.agentId === 'momiji'), true);
 
   await fs.rm(rootDir, { recursive: true, force: true });
 });
