@@ -1,4 +1,9 @@
-﻿# Claw Migration Skill
+﻿---
+name: claw-migration
+description: Migrate a single OpenClaw agent between devices through a configured remote with preview-first push and pull workflows.
+---
+
+# Claw Migration Skill
 
 Use this skill when the user wants to move a single OpenClaw agent between devices through a configured remote, or wants help previewing why such a migration will or will not work.
 

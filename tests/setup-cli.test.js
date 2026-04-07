@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSetupRemoteSettings, installMigrationSkill, runMigrationDoctor } from '../src/setup-cli.js';
+import { buildSetupRemoteSettings, installMigrationSkill, runMigrationDoctor, runMigrationSetup } from '../src/setup-cli.js';
 
 async function writeJson(filePath, value) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -33,6 +33,18 @@ async function createOpenClawConfig(rootDir) {
   return openClawDir;
 }
 
+function createFakeReadline(answers) {
+  let index = 0;
+  return () => ({
+    async question() {
+      const answer = answers[index] ?? '';
+      index += 1;
+      return answer;
+    },
+    close() {}
+  });
+}
+
 test('installMigrationSkill copies the bundled skill into ~/.openclaw/skills and overwrites existing content', async () => {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claw-migration-install-skill-'));
   const openClawDir = await createOpenClawConfig(rootDir);
@@ -49,6 +61,10 @@ test('installMigrationSkill copies the bundled skill into ~/.openclaw/skills and
   const skillContent = await fs.readFile(path.join(sharedSkillDir, 'SKILL.md'), 'utf8');
   assert.match(skillContent, /Claw Migration Skill/);
   await assert.rejects(fs.access(path.join(sharedSkillDir, 'stale.txt')));
+
+  const config = JSON.parse(await fs.readFile(path.join(openClawDir, 'openclaw.json'), 'utf8'));
+  assert.equal(config.skills.entries['claw-migration'].enabled, true);
+  assert.match(result.outputText, /skills.entries.claw-migration.enabled = true/);
 
   await fs.rm(rootDir, { recursive: true, force: true });
 });
@@ -95,4 +111,55 @@ test('buildSetupRemoteSettings does not copy releaseId into a new remote templat
     token: 'secret',
     remoteKey: 'main'
   });
+});
+
+test('runMigrationSetup can install the shared skill during setup', async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claw-migration-setup-'));
+  const openClawDir = await createOpenClawConfig(rootDir);
+  const savedLogs = [];
+  const installCalls = [];
+
+  const result = await runMigrationSetup({
+    openClawDir,
+    logger: {
+      info(message) {
+        savedLogs.push(message);
+      }
+    },
+    createReadline: createFakeReadline([
+      'momiji',
+      'qq475301610',
+      'claw-migration-store',
+      'momiji',
+      'secret-token',
+      'y',
+      'y',
+      'y',
+      'n',
+      'n',
+      'y'
+    ]),
+    installSkill: async (options) => {
+      installCalls.push(options);
+      return {
+        ok: true,
+        outputText: 'installed'
+      };
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.remoteName, 'momiji');
+  assert.equal(result.installedSkill, true);
+  assert.equal(installCalls.length, 1);
+
+  const config = JSON.parse(await fs.readFile(path.join(openClawDir, 'openclaw.json'), 'utf8'));
+  const remote = config.plugins.entries['claw-migration'].config.remotes.momiji;
+  assert.equal(remote.settings.owner, 'qq475301610');
+  assert.equal(remote.settings.repo, 'claw-migration-store');
+  assert.equal(remote.settings.remoteKey, 'momiji');
+  assert.equal(remote.settings.token, 'secret-token');
+  assert.ok(savedLogs.some((line) => /Saved Claw Migration config/i.test(line)));
+
+  await fs.rm(rootDir, { recursive: true, force: true });
 });
