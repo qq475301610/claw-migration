@@ -163,21 +163,9 @@ claw-migration --help
 
 重要说明：
 - `remoteKey` 是 GitHub 远程的主标识
-- `releaseId` 现在更像内部缓存，push/pull 后可能被自动写回
-- 用户真正应该关心和配置的是 `remoteKey`，而不是 `releaseId`
 - GitHub token 可以直接存到 `remotes.<name>.settings.token`
 - GitHub token 现在只从 `remotes.<name>.settings.token` 读取
-
-### `remoteKey` 和 `releaseId` 的区别
-
-这两个字段是故意分开的：
-- `remoteKey`：你自己控制的稳定标识，用来表示“这是哪一个迁移槽位”
-- `releaseId`：GitHub 返回的内部数字 ID，只作为本地缓存
-
-实际使用时：
 - 源设备和目标设备应配置相同的 `remoteKey`
-- 即使没有 `releaseId`，插件也可以通过 `remoteKey` 找到正确的 GitHub release
-- 即使 `releaseId` 变化或丢失，通常也不需要你手工修复
 
 ## GitHub Token 与权限
 
@@ -240,7 +228,6 @@ claw-migration push --agent main
 - 为对应 `remoteKey` 创建或更新 GitHub Release Asset
 - 按配置停用该 agent 的 bindings
 - 如果绑定的是受支持 channel，会把对应账号或 channel 的 `enabled` 设为 `false`
-- `releaseId` 会作为缓存回写到 `openclaw.json`
 - 不会手动重启 gateway
 
 ### 目标设备
@@ -360,7 +347,7 @@ claw-migration verify --agent <id> [--remote <name>] [--openclaw-dir <path>] [--
 `claw-migration preview pull --agent <id>` 会下载远程迁移包，并展示本次导入将会发生什么。
 
 它会做什么：
-- 通过 `remoteKey` 或缓存的 `releaseId` 定位远程包
+- 通过 `remoteKey` 定位远程包
 - 下载并校验迁移包
 - 检查依赖的 plugins 和 skills
 - 展示哪些配置、sessions 和 workspace 文件会被覆盖

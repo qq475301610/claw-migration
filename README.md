@@ -163,21 +163,9 @@ Typical GitHub config:
 
 Important notes:
 - `remoteKey` is the primary stable identifier for a GitHub remote
-- `releaseId` is an internal cache and may be written automatically after push or pull
-- users should configure and remember `remoteKey`; they do not need to manage `releaseId` manually
 - the GitHub token can be stored directly in `remotes.<name>.settings.token`
 - GitHub token is read from `remotes.<name>.settings.token` only
-
-### `remoteKey` vs `releaseId`
-
-These two fields are intentionally different:
-- `remoteKey`: human-controlled stable key, shared across devices, used to find the same migration slot every time
-- `releaseId`: GitHub's internal numeric id for a specific release, used only as a local cache
-
-In practice:
 - source and target devices should use the same `remoteKey`
-- if `releaseId` is missing, the plugin can still find the correct GitHub release by `remoteKey`
-- if `releaseId` changes or is lost, you normally do not need to fix anything manually
 
 ## GitHub Token And Permissions
 
@@ -240,7 +228,6 @@ What happens after a successful `push`:
 - a GitHub release asset is created or updated for the configured `remoteKey`
 - the selected agent's bindings are disabled if configured
 - the linked channel account is disabled when the channel config supports an `enabled` switch
-- `releaseId` is cached back into `openclaw.json`
 - the plugin does not manually restart the gateway
 
 ### Target device
@@ -360,7 +347,7 @@ Parameters:
 `claw-migration preview pull --agent <id>` downloads the remote package and shows what would be imported.
 
 What it does:
-- resolves the remote package by `remoteKey` or cached `releaseId`
+- resolves the remote package by `remoteKey`
 - downloads and validates the package
 - checks required plugins and skills
 - shows what config, sessions, and workspace files would be overwritten
