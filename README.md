@@ -6,6 +6,22 @@
 
 It packages the selected agent's config, sessions, and workspace, uploads that package to GitHub Releases, and lets the target device pull it back with a preview-first workflow. After a successful handoff, it can disable bindings on the source device, disable the linked channel account when supported, and enable them again on the target device.
 
+<a id="toc"></a>
+
+## Table of Contents
+
+- [What This Project Does](#overview)
+- [Install From Source](#install)
+- [Quick Start](#quick-start)
+- [Configuration Model](#configuration)
+- [Migration Workflow](#workflow)
+- [Command Reference](#commands)
+- [Channel Support](#channels)
+- [OpenClaw Skill Usage](#skills)
+- [Plugin Files](#plugin-files)
+
+<a id="overview"></a>
+
 ## What This Project Does
 
 Use `claw-migration` when you want to:
@@ -20,6 +36,8 @@ Current scope:
 - WebDAV reserved for a future version
 - full migration package, not a sanitized sharing bundle
 - channel state recovery supports official OpenClaw channel-style configs and the channel plugin set from `openclaw-china`
+
+<a id="install"></a>
 
 ## Install From Source
 
@@ -78,6 +96,8 @@ npm link
 claw-migration --help
 ```
 
+<a id="quick-start"></a>
+
 ## Quick Start
 
 Recommended first-run flow:
@@ -99,6 +119,8 @@ If a new session still does not show the skill after setup, run:
 ```bash
 claw-migration install-skill
 ```
+
+<a id="configuration"></a>
 
 ## Configuration Model
 
@@ -180,6 +202,8 @@ Important notes:
 - the GitHub token is read from `remotes.<name>.settings.token`
 - source and target devices should use the same `remoteKey` when they should share the same remote migration slot
 
+<a id="workflow"></a>
+
 ## Migration Workflow
 
 If you did not run `npm link`, replace `claw-migration` below with `node ./bin/claw-migration.js`.
@@ -227,6 +251,8 @@ What `pull` does:
 Session history note:
 - if you want old session history to remain easy to browse and continue, use the same agent id for both `push --agent` and `pull --agent`
 - cross-agent import is supported, but old sessions may not appear under the new target agent as expected
+
+<a id="commands"></a>
 
 ## Command Reference
 
@@ -391,6 +417,8 @@ Parameters:
 - `--yes`: non-interactive confirmation for `pull`
 - `--quiet`: suppresses progress lines such as download and extract stages
 
+<a id="channels"></a>
+
 ## Channel Support
 
 Channel state switching during `push` and `pull` is broader than `qqbot` only.
@@ -400,6 +428,8 @@ Supported today:
 - the channel plugin set from `openclaw-china`, including `dingtalk`, `feishu-china`, `qqbot`, `wechat-mp`, `wecom`, `wecom-app`, and `wecom-kf`
 
 When a supported channel account is linked to the migrated agent, `push` can mark that account as disabled on the source device and `pull` can restore it on the target device.
+
+<a id="skills"></a>
 
 ## OpenClaw Skill Usage
 
@@ -423,6 +453,8 @@ Once the plugin is installed, an Agent can use that skill to:
 3. stop on blockers instead of forcing writes
 4. summarize remote, bindings, channel account state, and watcher-driven reload behavior after success
 
+<a id="plugin-files"></a>
+
 ## Plugin Files
 
 The files that make this repository an OpenClaw plugin are:
@@ -432,10 +464,8 @@ The files that make this repository an OpenClaw plugin are:
 - [src/setup-cli.js](./src/setup-cli.js)
 - [skills/claw-migration/SKILL.md](./skills/claw-migration/SKILL.md)
 
-## Testing
 
-```bash
-npm test
-```
+
+
 
 

@@ -4,7 +4,23 @@
 
 `claw-migration` 是一个 OpenClaw 插件和配套 CLI，用来把单个 agent 从一台设备迁移到另一台设备。
 
-它会把目标 agent 的配置、sessions 和 workspace 打成迁移包，上传到 GitHub Releases，然后让目标设备以 preview-first 的方式拉取回来。交接成功后，它还可以自动关闭源设备上的 bindings、关闭支持 `enabled` 开关的 channel 账号，并在目标设备重新启用它们。
+它会把目标 agent 的配置、sessions 和 workspace 打成迁移包，上传到 GitHub Releases，然后让目标设备以 preview-first 的方式拉取回来。交接成功后，它还可以自动关闭源设备上的 bindings、关闭支持 enabled 开关的 channel 账号，并在目标设备重新启用它们。
+
+<a id="toc"></a>
+
+## 目录
+
+- [这个项目是做什么的](#overview)
+- [从源码安装](#install)
+- [快速开始](#quick-start)
+- [配置模型](#configuration)
+- [迁移流程](#workflow)
+- [命令说明](#commands)
+- [Channel 支持范围](#channels)
+- [OpenClaw Skill 用法](#skills)
+- [让 OpenClaw 识别这个仓库的关键文件](#plugin-files)
+
+<a id="overview"></a>
 
 ## 这个项目是做什么的
 
@@ -20,6 +36,8 @@
 - WebDAV 只预留了扩展位，暂未实现
 - 迁移包是完整包，不是脱敏分享包
 - channel 状态恢复同时支持官方 OpenClaw channel 风格配置和 `openclaw-china` 插件里的 channel 配置
+
+<a id="install"></a>
 
 ## 从源码安装
 
@@ -78,6 +96,8 @@ npm link
 claw-migration --help
 ```
 
+<a id="quick-start"></a>
+
 ## 快速开始
 
 推荐首次使用流程：
@@ -99,6 +119,8 @@ claw-migration doctor
 ```bash
 claw-migration install-skill
 ```
+
+<a id="configuration"></a>
 
 ## 配置模型
 
@@ -179,6 +201,8 @@ GitHub 侧常见错误：
 - `remoteKey` 才是 GitHub release 槽位的稳定标识
 - GitHub token 只从 `remotes.<name>.settings.token` 读取
 
+<a id="workflow"></a>
+
 ## 迁移流程
 
 如果你没有执行 `npm link`，下面命令里的 `claw-migration` 都可以替换成 `node ./bin/claw-migration.js`。
@@ -226,6 +250,8 @@ claw-migration pull --agent main --remote main-agent --yes
 Session 历史说明：
 - 如果你希望旧 session 历史仍然容易查阅并继续续接，`push --agent` 和 `pull --agent` 最好使用同一个 agent id
 - 虽然支持跨 agent 导入，但旧 session 记录在新的目标 agent 下不一定还能按预期直接查阅
+
+<a id="commands"></a>
 
 ## 命令说明
 
@@ -390,6 +416,8 @@ claw-migration verify --agent <id> [--remote <name>] [--openclaw-dir <path>] [--
 - `--yes`：给 `pull` 使用的非交互确认参数
 - `--quiet`：关闭下载、解压等阶段的进度输出
 
+<a id="channels"></a>
+
 ## Channel 支持范围
 
 `push` 和 `pull` 时的 channel 状态切换，不再只针对 `qqbot`。
@@ -399,6 +427,8 @@ claw-migration verify --agent <id> [--remote <name>] [--openclaw-dir <path>] [--
 - `openclaw-china` 插件里的 channel 集合，包括 `dingtalk`、`feishu-china`、`qqbot`、`wechat-mp`、`wecom`、`wecom-app`、`wecom-kf`
 
 当迁移的 agent 绑定到了这些受支持 channel 时，`push` 会在源设备停用对应账号或 channel，`pull` 会在目标设备恢复它们。
+
+<a id="skills"></a>
 
 ## OpenClaw Skill 用法
 
@@ -422,6 +452,8 @@ Skill 查找优先级遵循 OpenClaw 官方文档：
 3. 遇到 blocker 时停止，而不是强行写入
 4. 成功后总结 remote、bindings、channel 账号状态和 watcher 驱动的重载行为
 
+<a id="plugin-files"></a>
+
 ## 让 OpenClaw 识别这个仓库的关键文件
 
 下面这些文件共同组成了 OpenClaw 原生插件包：
@@ -431,10 +463,8 @@ Skill 查找优先级遵循 OpenClaw 官方文档：
 - [src/setup-cli.js](./src/setup-cli.js)
 - [skills/claw-migration/SKILL.md](./skills/claw-migration/SKILL.md)
 
-## 测试
 
-```bash
-npm test
-```
+
+
 
 
