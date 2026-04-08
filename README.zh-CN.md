@@ -1,10 +1,10 @@
-# Claw Migration
+﻿# Claw Migration
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
 `claw-migration` 是一个 OpenClaw 插件和配套 CLI，用来把单个 agent 从一台设备迁移到另一台设备。
 
-它会把目标 agent 的配置、sessions 和 workspace 打成迁移包，上传到 GitHub，然后让目标设备以 preview-first 的方式拉取回来。交接成功后，它还可以自动关闭源设备上的 bindings、关闭支持 `enabled` 开关的 channel 账号或 channel 本身，并在目标设备重新启用它们。
+它会把目标 agent 的配置、sessions 和 workspace 打成迁移包，上传到 GitHub Releases，然后让目标设备以 preview-first 的方式拉取回来。交接成功后，它还可以自动关闭源设备上的 bindings、关闭支持 `enabled` 开关的 channel 账号，并在目标设备重新启用它们。
 
 ## 这个项目是做什么的
 
@@ -51,8 +51,6 @@ npm test
 
 ### 3. 把插件注册到 OpenClaw
 
-这一步会让 OpenClaw 真正识别 `claw-migration`。
-
 ```bash
 openclaw plugins install -l .
 ```
@@ -65,27 +63,7 @@ openclaw plugins list
 
 插件首次被加载时，会自动往 `~/.openclaw/openclaw.json` 里 seed 一份默认配置块。
 
-### 4. 运行交互式配置
-
-推荐配置方式：
-
-```bash
-claw-migration setup
-claw-migration doctor
-```
-
-这个命令会引导你填写：
-- remote 名称
-- GitHub owner
-- GitHub repo
-- 稳定的 `remoteKey`
-- GitHub token，并直接写入 `openclaw.json`
-- 是否带 transcripts
-- push/pull 后是否切换 bindings
-
-执行完后，`claw-migration doctor` 会检查内置 skill 是否存在，以及 `~/.openclaw/skills/claw-migration` 下是否已经有共享安装。如果新会话里仍然看不到 skill，可以执行 `claw-migration install-skill`。
-
-### 5. 选择 CLI 的运行方式
+### 4. 选择 CLI 的运行方式
 
 方式 A：直接在仓库里运行
 
@@ -100,31 +78,66 @@ npm link
 claw-migration --help
 ```
 
+## 快速开始
+
+推荐首次使用流程：
+
+```bash
+claw-migration setup
+claw-migration doctor
+```
+
+`claw-migration setup` 现在已经包含完整的交互式配置流程：
+- 创建或更新 remote 配置
+- 把 GitHub token 写入 `openclaw.json`
+- 选择是否带 transcripts
+- 选择 push/pull 是否切换 bindings
+- 可选安装共享 `claw-migration` skill 到 `~/.openclaw/skills`
+
+如果 setup 后新会话仍然看不到 skill，再执行：
+
+```bash
+claw-migration install-skill
+```
+
 ## 配置模型
 
 插件配置在：
 - `~/.openclaw/openclaw.json`
 - `plugins.entries.claw-migration.config`
 
-### GitHub 字段怎么填
+### GitHub 字段与 Token 权限说明
 
 当 `claw-migration setup` 提示你填写 GitHub 字段时，可以这样理解：
-- `GitHub owner`：GitHub 用户名或组织名。例如 `qq475301610` 或 `my-team`。
-- `GitHub repo`：专门用来存迁移包 Release Assets 的仓库名。例如 `claw-migration-store`。
-- `GitHub token`：一个有权限在该仓库创建 Release、上传 Release Assets 的 Personal Access Token。
+- `GitHub owner`：GitHub 用户名或组织名，例如 `qq475301610` 或 `my-team`
+- `GitHub repo`：专门用来存迁移包 Release Assets 的仓库名，例如 `claw-migration-store`
+- `Remote key`：稳定的远程槽位名，用来定位 GitHub 上对应的 release，例如 `main-agent` 或 `momiji`
+- `GitHub token`：一个有权限访问该仓库、创建 Release、上传 Release Assets 的 Personal Access Token
 
 推荐准备方式：
-1. 先决定迁移文件是放在你的个人 GitHub 账号下，还是某个组织下。
+1. 先决定迁移文件放在你的个人 GitHub 账号下，还是某个组织下。
 2. 新建一个专门存迁移包的仓库，例如 `claw-migration-store`。
-3. 把账号名或组织名填到 `owner`。
-4. 把仓库名填到 `repo`。
-5. 去 `GitHub -> Settings -> Developer settings -> Personal access tokens` 创建 token，然后在 setup 时粘贴进去。
+3. 确保仓库不是空仓库，至少先有一个初始提交，例如 `README.md`。
+4. 打开 `GitHub -> Settings -> Developer settings -> Personal access tokens` 创建 token。
+5. 在 `claw-migration setup` 中把 token 粘贴进去。
 
-推荐的仓库使用方式：
+推荐仓库使用方式：
 - 最好单独建一个 private 仓库专门存迁移包
-- 除非你明确想把迁移 zip 也放到插件源码仓库里，否则不要直接复用当前源码仓库
-- 仓库不能是空仓库，至少先有一个初始提交，例如 `README.md`
-- 源设备和目标设备应配置相同的 `owner` 和 `repo`
+- 源设备和目标设备如果要共享同一个远程槽位，就配置相同的 `owner`、`repo` 和 `remoteKey`
+- `owner` 和 `repo` 只填名字，不要填完整 URL
+
+推荐的 fine-grained token 权限：
+1. 打开 `Settings -> Developer settings -> Personal access tokens -> Fine-grained tokens`
+2. `Resource owner` 选择正确的账号或组织
+3. `Repository access` 选择迁移仓库
+4. `Repository permissions` 至少给 `Contents: Read and write`
+5. 生成 token，并粘贴到 setup
+
+GitHub 侧常见错误：
+- 仓库还没创建
+- 仓库是空仓库
+- 仓库是 private，但 token 没权限访问
+- 把 `owner` 或 `repo` 写成了完整 URL，而不是名字
 
 推荐的 GitHub 配置示例：
 
@@ -162,95 +175,53 @@ claw-migration --help
 ```
 
 重要说明：
-- `remoteKey` 是 GitHub 远程的主标识
-- GitHub token 可以直接存到 `remotes.<name>.settings.token`
-- GitHub token 现在只从 `remotes.<name>.settings.token` 读取
-- 源设备和目标设备应配置相同的 `remoteKey`
+- `--remote <name>` 选择的是本地 `config.remotes` 下的 remote 名称
+- `remoteKey` 才是 GitHub release 槽位的稳定标识
+- GitHub token 只从 `remotes.<name>.settings.token` 读取
 
-## GitHub Token 与权限
-
-推荐方式：
-- 直接执行 `claw-migration setup`
-- 按提示粘贴 GitHub token
-- 让插件把它写入 `openclaw.json`
-
-
-去哪里获取 `owner`、`repo` 和 `token`：
-1. 打开准备用来存迁移文件的 GitHub 账号或组织页面。
-2. 新建一个仓库，例如 `claw-migration-store`。
-3. 把账号名或组织名作为 `owner`。
-4. 把仓库名作为 `repo`。
-5. 再进入 `Settings -> Developer settings -> Personal access tokens` 创建 token。
-
-这个 token 需要满足：
-- 能访问你配置的仓库
-- 能创建 Release
-- 能上传和替换 Release Assets
-- 如果仓库是 private，权限不足时 GitHub 可能返回 `404 Not Found`
-
-推荐的 fine-grained token 配置方式：
-1. 打开 `Settings -> Developer settings -> Personal access tokens -> Fine-grained tokens`
-2. `Resource owner` 选择正确的账号或组织
-3. `Repository access` 选择目标仓库，例如 `claw-migration-store`
-4. `Repository permissions` 至少给 `Contents: Read and write`
-5. 生成 token，并粘贴到 setup
-
-如果你使用 classic token，也必须保证它对目标仓库具备足够的仓库访问权限，能够创建 Release 和上传资产。
-
-GitHub 侧常见错误：
-- 仓库还没创建
-- `owner` 对了，但 `repo` 填错了
-- 仓库是 private，但 token 不能访问它
-- 仓库是空仓库，GitHub release 至少要求仓库里有一个 commit
-- 把 `owner` 或 `repo` 写成了完整 URL，而不是名字
-
-GitHub 官方说明：
-- [Managing your personal access tokens](https://docs.github.com/github/extending-github/git-automation-with-oauth-tokens)
-- [Permissions required for fine-grained personal access tokens](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens)
-- [About releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases)
-
-## 快速使用
+## 迁移流程
 
 如果你没有执行 `npm link`，下面命令里的 `claw-migration` 都可以替换成 `node ./bin/claw-migration.js`。
 
-### 源设备
+下面这套流程既可以由你在终端里手工执行，也可以让 OpenClaw Agent 通过内置 `claw-migration` skill 来执行。
+
+### 设备 A：push 源 agent
+
+在当前持有 agent 状态的设备上执行：
 
 ```bash
-openclaw plugins install -l .
-claw-migration setup
-claw-migration doctor
-claw-migration install-skill   # 只有在新会话里仍然看不到 skill 时才需要
-claw-migration preview push --agent main
-claw-migration push --agent main
+claw-migration preview push --agent main --remote main-agent
+claw-migration push --agent main --remote main-agent
 ```
 
-`push` 成功后会发生：
-- 为对应 `remoteKey` 创建或更新 GitHub Release Asset
-- 按配置停用该 agent 的 bindings
-- 如果绑定的是受支持 channel，会把对应账号或 channel 的 `enabled` 设为 `false`
-- 不会手动重启 gateway
+`push` 会做这些事：
+- 为所选 agent 创建迁移包
+- 根据 `remoteKey` 创建或更新 GitHub Release Asset
+- 按配置停用源设备上的该 agent bindings
+- 在受支持的 channel 上停用对应账号或 channel 的 `enabled` 开关
 
-### 目标设备
+### 设备 B：pull 到目标 agent 槽位
 
-执行 `pull` 之前，请确认目标设备已经完成：
-- 已执行 `openclaw plugins install -l .`
-- 已通过 `claw-migration setup` 配好相同的 `owner`、`repo` 和 `remoteKey`
-- 已在 `openclaw.json` 里配置 GitHub token
-- 如果新会话里仍然看不到 skill，可执行 `claw-migration install-skill` 安装共享 fallback
-
-然后执行：
+在目标设备上执行，并确保它已经配置好相同的 GitHub remote：
 
 ```bash
-claw-migration preview pull --agent main
-claw-migration pull --agent main --yes
+claw-migration preview pull --agent main --remote main-agent
+claw-migration pull --agent main --remote main-agent --yes
 ```
 
-`pull` 成功后会发生：
-- 下载远程迁移包
-- 导入 agent 配置、sessions 和 workspace
-- 按配置重新启用该 agent 的 bindings
-- 如果绑定的是受支持 channel，会把对应账号或 channel 恢复成可用状态
-- 不会手动重启 gateway
+`pull` 会做这些事：
+- 从 GitHub Releases 下载远程迁移包
+- 在写入前先做 preview 校验
+- 把 agent 配置、sessions 和 workspace 导入到指定的本地 agent 槽位
+- 按配置重新启用 bindings 和关联 channel 状态
+
+### 示例：把设备 A 的 agent 迁移到设备 B
+
+1. 在两台设备上都安装插件，并执行 `claw-migration setup`。
+2. 在设备 A 上配置一个 remote，例如 `main-agent`，并设置稳定的 `remoteKey`。
+3. 在设备 B 上配置相同的 `owner`、`repo` 和 `remoteKey`。
+4. 在设备 A 上执行 `preview push` 和 `push`。
+5. 在设备 B 上执行 `preview pull` 和 `pull`。
 
 Session 历史说明：
 - 如果你希望旧 session 历史仍然容易查阅并继续续接，`push --agent` 和 `pull --agent` 最好使用同一个 agent id
@@ -280,6 +251,7 @@ claw-migration verify --agent <id> [--remote <name>] [--openclaw-dir <path>] [--
 - 让你选择 remote 名称、GitHub owner、GitHub repo 和稳定的 `remoteKey`
 - 把 GitHub token 写入插件配置
 - 设置迁移和 gateway 的行为开关
+- 可选安装共享 skill，并写入 `skills.entries.claw-migration.enabled = true`
 
 常用参数：
 - `--openclaw-dir <path>`：改用其他 OpenClaw 状态目录，而不是默认的 `~/.openclaw`
@@ -303,7 +275,8 @@ claw-migration verify --agent <id> [--remote <name>] [--openclaw-dir <path>] [--
 它会做什么：
 - 只复制当前插件自己的 `claw-migration` skill
 - 如果共享目录里已有旧版本，则直接覆盖更新
-- 打印源路径、目标路径和是否发生覆盖
+- 同时写入 `skills.entries.claw-migration.enabled = true`
+- 打印源路径、目标路径、配置文件路径和是否发生覆盖
 - 提示你如果没有立刻看到 skill，可以新开一个会话
 
 参数说明：
@@ -447,7 +420,7 @@ Skill 查找优先级遵循 OpenClaw 官方文档：
 1. 读取 `plugins.entries.claw-migration.config`
 2. 在 `push` 或 `pull` 前先执行 preview
 3. 遇到 blocker 时停止，而不是强行写入
-4. 成功后总结 remote、bindings、channel 账号状态和 gateway 动作
+4. 成功后总结 remote、bindings、channel 账号状态和 watcher 驱动的重载行为
 
 ## 让 OpenClaw 识别这个仓库的关键文件
 
@@ -464,6 +437,4 @@ Skill 查找优先级遵循 OpenClaw 官方文档：
 npm test
 ```
 
-## 更多文档
 
-- GitHub provider 操作说明：[docs/github-provider-guide.md](./docs/github-provider-guide.md)

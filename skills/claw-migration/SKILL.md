@@ -29,13 +29,17 @@ Do not use this skill for generic backup requests or for editing unrelated OpenC
 4. Treat `settings.remoteKey` as the remote slot identifier used on GitHub Releases.
 5. Prefer `claw-migration preview push` or `claw-migration preview pull` before any write operation.
 6. If preview reports blockers, stop and summarize blockers clearly.
-7. Only run `claw-migration push` or `claw-migration pull` after a clean preview or explicit user instruction.
-8. After success, summarize:
-   - source agent id and target agent id when they differ
-   - remote used
-   - whether bindings were disabled/enabled
-   - whether channel account state was restored
-   - any warnings about skipped plugin config or watcher-driven reload behavior
+7. If preview reports warnings only, summarize the warnings and ask for confirmation before any write operation unless the user already gave explicit approval.
+8. Only run `claw-migration push` or `claw-migration pull` after a clean preview or explicit user instruction.
+9. After success, summarize the fixed output items listed below.
+
+## Decision rules
+
+- If the user does not specify `--remote`, use `defaultRemote`.
+- If the user mentions a GitHub slot such as `momiji`, confirm whether they mean the local remote name or the remote slot stored in `settings.remoteKey`.
+- If the user wants to move remote agent `momiji` into local agent `main`, use the remote that points to `remoteKey = momiji`, but still set `--agent main` for the local target slot.
+- If `push --agent` and `pull --agent` differ, warn that old session history may not remain directly readable under the new agent id.
+- If preview shows missing plugins that will be skipped, tell the user which config will be skipped before continuing.
 
 ## Commands
 
@@ -46,6 +50,25 @@ claw-migration preview pull --agent <agentId> [--remote <name>]
 claw-migration pull --agent <agentId> [--remote <name>] --yes
 claw-migration verify --agent <agentId> [--remote <name>]
 ```
+
+## Success summary requirements
+
+After `push`, summarize:
+- source agent id
+- remote name
+- remoteKey when available
+- which bindings were disabled
+- which linked channel accounts or channel flags were disabled
+- any warnings about skipped config or watcher-driven reload behavior
+
+After `pull`, summarize:
+- source agent id from the package
+- target agent id on this device
+- remote name
+- remoteKey when available
+- which bindings were enabled
+- which linked channel accounts or channel flags were restored
+- any warnings about skipped plugin config, memory index rebuild, or watcher-driven reload behavior
 
 ## Notes
 
